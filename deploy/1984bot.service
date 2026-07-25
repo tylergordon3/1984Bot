@@ -1,0 +1,20 @@
+[Unit]
+Description=1984Bot Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust User and WorkingDirectory to match your Pi.
+User=pi
+WorkingDirectory=/home/pi/1984Bot
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=5
+# Give the bot a moment to close open sessions cleanly on stop/restart.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
