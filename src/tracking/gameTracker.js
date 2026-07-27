@@ -1,5 +1,5 @@
 import { ActivityType } from 'discord.js';
-import { getDb, rememberUser } from '../db/database.js';
+import { getDb, rememberUser, logName } from '../db/database.js';
 import { logger } from '../util/logger.js';
 import { MINUTE } from '../util/time.js';
 
@@ -26,12 +26,12 @@ function startGame(guildId, userId, name, at) {
        VALUES (?, ?, ?, ?, ?)`
     )
     .run(guildId, userId, name, at, at);
-  logger.info(`👁️ game start: ${userId} → "${name}"`);
+  logger.info(`👁️ game start: ${logName(userId)} → "${name}"`);
 }
 
 function stopGame(sessionId, at, name, userId) {
   getDb().prepare('UPDATE game_sessions SET ended_at = ? WHERE id = ?').run(at, sessionId);
-  if (name) logger.info(`👁️ game stop: ${userId} → "${name}"`);
+  if (name) logger.info(`👁️ game stop: ${logName(userId)} → "${name}"`);
 }
 
 /** discord.js presenceUpdate handler. */
@@ -46,7 +46,7 @@ export function handlePresenceUpdate(oldPresence, newPresence) {
   const before = new Set(playingGames(oldPresence));
   const after = new Set(playingGames(newPresence));
   logger.debug(
-    `presenceUpdate ${userId}: [${[...before].join(', ')}] -> [${[...after].join(', ')}]`
+    `presenceUpdate ${user?.username || userId}: [${[...before].join(', ')}] -> [${[...after].join(', ')}]`
   );
   if (before.size === 0 && after.size === 0) return;
 
@@ -71,13 +71,6 @@ export function reconcileGames(guild) {
   const db = getDb();
   const activeByUser = new Map(); // userId -> Set(gameNames)
 
-  logger.info(`Reconcile: ${guild.presences.cache.size} presences in cache.`);
-  // TEMP diagnostic: dump exactly what Discord sent for each cached presence.
-  for (const p of guild.presences.cache.values()) {
-    const acts =
-      p.activities.map((a) => `"${a.name}"(type ${a.type})`).join(', ') || 'none';
-    logger.info(`  • ${p.user?.username || p.userId} status=${p.status} activities=[${acts}]`);
-  }
   for (const presence of guild.presences.cache.values()) {
     const userId = presence.userId || presence.member?.id;
     const user = presence.user || presence.member?.user;

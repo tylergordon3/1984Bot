@@ -102,6 +102,46 @@ export function voiceCompanions(userId, window, limit = 10) {
   return { totalMs, aloneMs, companions };
 }
 
+// ── Voice: state flags (streaming / muted / deafened / video) ──────────────
+
+export const FLAGS = ['streaming', 'muted', 'deafened', 'video'];
+
+/** Per-flag totals (ms) for one user over the window. */
+export function voiceFlagTotalsForUser(userId, window) {
+  const { since, until } = window;
+  const now = Date.now();
+  const rows = getDb()
+    .prepare(
+      `SELECT flag,
+              SUM(MAX(0, MIN(COALESCE(ended_at, @now), @until) - MAX(started_at, @since))) AS ms
+       FROM voice_flags
+       WHERE user_id = @userId AND started_at < @until AND COALESCE(ended_at, @now) > @since
+       GROUP BY flag`
+    )
+    .all({ now, since, until, userId });
+  const totals = Object.fromEntries(FLAGS.map((f) => [f, 0]));
+  for (const r of rows) if (r.flag in totals) totals[r.flag] = r.ms || 0;
+  return totals;
+}
+
+/** Leaderboard of who spent the most time in a given flag state. */
+export function voiceFlagLeaderboard(flag, window, limit = 15) {
+  const { since, until } = window;
+  const now = Date.now();
+  return getDb()
+    .prepare(
+      `SELECT user_id,
+              SUM(MAX(0, MIN(COALESCE(ended_at, @now), @until) - MAX(started_at, @since))) AS ms
+       FROM voice_flags
+       WHERE flag = @flag AND started_at < @until AND COALESCE(ended_at, @now) > @since
+       GROUP BY user_id
+       HAVING ms > 0
+       ORDER BY ms DESC
+       LIMIT @limit`
+    )
+    .all({ now, since, until, flag, limit });
+}
+
 // ── Voice: time-of-day occupancy ───────────────────────────────────────────
 
 /** Person-milliseconds of voice presence bucketed by local hour-of-day (0–23). */

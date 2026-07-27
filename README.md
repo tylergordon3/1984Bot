@@ -101,9 +101,10 @@ cleanly before exiting.
 `/nowplaying` · `/volume` · `/shuffle` · `/leave`
 
 **Voice:**
-- `/voicestats [user] [period]` — total time, alone vs with-others %, top companions
+- `/voicestats [user] [period]` — total time, alone vs with-others %, top companions, and time spent streaming / muted / deafened / on camera
 - `/voiceleaderboard [period]` — who spent the most time in voice
 - `/voiceheatmap [period]` — busiest hours of the day (server local time)
+- `/voiceflag state:<streaming|muted|deafened|camera> [period]` — leaderboard for time spent in a given state
 
 **Games:**
 - `/gamestats [user] [period]` — a user's most-played games
@@ -116,8 +117,11 @@ cleanly before exiting.
 
 ## How tracking works
 
-- **`voiceStateUpdate`** opens/closes rows in `voice_sessions`; **`presenceUpdate`**
-  does the same for `game_sessions`. These two tables are the only source of truth.
+- **`voiceStateUpdate`** opens/closes rows in `voice_sessions`, and also in
+  `voice_flags` for each active state (streaming / muted / deafened / camera);
+  **`presenceUpdate`** does the same for `game_sessions`. These tables are the
+  only source of truth. ("Muted" means mic-off-but-listening — a full deafen is
+  counted as `deafened`, not double-counted as muted.)
 - Every statistic (leaderboards, co-presence, alone time, hourly heatmap) is
   **derived at query time** by clamping sessions to the requested window, so no
   aggregates can drift.

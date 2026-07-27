@@ -4,9 +4,18 @@ import {
   voiceTotalForUser,
   voiceCompanions,
   voiceHourHistogram,
+  voiceFlagTotalsForUser,
+  voiceFlagLeaderboard,
 } from '../stats/queries.js';
 import { rememberUser, displayName } from '../db/database.js';
 import { addPeriodOption, getWindow, userLeaderboardLines, baseEmbed, formatDuration } from './_shared.js';
+
+const FLAG_LABELS = {
+  streaming: '🔴 Streaming',
+  muted: '🔇 Muted',
+  deafened: '🔕 Deafened',
+  video: '📹 Camera',
+};
 
 const voiceleaderboard = {
   data: addPeriodOption(
@@ -59,6 +68,43 @@ const voicestats = {
           .join('\n'),
       });
     }
+
+    const flags = voiceFlagTotalsForUser(target.id, window);
+    const behaviour = Object.entries(FLAG_LABELS)
+      .filter(([key]) => flags[key] > 0)
+      .map(([key, label]) => `${label}: ${formatDuration(flags[key])}`)
+      .join('\n');
+    if (behaviour) embed.addFields({ name: 'Time spent', value: behaviour });
+
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+
+const voiceflag = {
+  data: addPeriodOption(
+    new SlashCommandBuilder()
+      .setName('voiceflag')
+      .setDescription('Leaderboard for time streaming / muted / deafened / on camera')
+      .addStringOption((o) =>
+        o
+          .setName('state')
+          .setDescription('Which state to rank')
+          .setRequired(true)
+          .addChoices(
+            { name: '🔴 Streaming', value: 'streaming' },
+            { name: '🔇 Muted', value: 'muted' },
+            { name: '🔕 Deafened', value: 'deafened' },
+            { name: '📹 Camera', value: 'video' }
+          )
+      )
+  ),
+  async execute(interaction) {
+    const window = getWindow(interaction);
+    const state = interaction.options.getString('state');
+    const rows = voiceFlagLeaderboard(state, window, 15);
+    const embed = baseEmbed(`${FLAG_LABELS[state]} Leaderboard`, window.label).setDescription(
+      userLeaderboardLines(rows)
+    );
     await interaction.reply({ embeds: [embed] });
   },
 };
@@ -104,4 +150,4 @@ const voiceheatmap = {
   },
 };
 
-export default [voicestats, voiceleaderboard, voiceheatmap];
+export default [voicestats, voiceleaderboard, voiceheatmap, voiceflag];

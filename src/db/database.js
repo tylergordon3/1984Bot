@@ -35,6 +35,23 @@ CREATE INDEX IF NOT EXISTS idx_game_user  ON game_sessions (user_id, started_at)
 CREATE INDEX IF NOT EXISTS idx_game_name  ON game_sessions (game_name, started_at);
 CREATE INDEX IF NOT EXISTS idx_game_open  ON game_sessions (ended_at) WHERE ended_at IS NULL;
 
+-- Per-flag mini-sessions within voice: streaming / muted / deafened / video.
+-- Each active flag is its own open row, closed when the flag clears or the user
+-- leaves. Aggregated the same clamped way as voice_sessions.
+CREATE TABLE IF NOT EXISTS voice_flags (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT    NOT NULL,
+  user_id      TEXT    NOT NULL,
+  channel_id   TEXT    NOT NULL,
+  flag         TEXT    NOT NULL,   -- 'streaming' | 'muted' | 'deafened' | 'video'
+  started_at   INTEGER NOT NULL,
+  ended_at     INTEGER,
+  last_seen_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_flag_user ON voice_flags (user_id, flag, started_at);
+CREATE INDEX IF NOT EXISTS idx_flag_name ON voice_flags (flag, started_at);
+CREATE INDEX IF NOT EXISTS idx_flag_open ON voice_flags (ended_at) WHERE ended_at IS NULL;
+
 -- Lightweight cache of display names so reports don't need live fetches.
 CREATE TABLE IF NOT EXISTS users (
   user_id   TEXT PRIMARY KEY,
@@ -77,6 +94,12 @@ export function rememberUser(userId, username) {
 export function displayName(userId) {
   const row = getDb().prepare('SELECT username FROM users WHERE user_id = ?').get(userId);
   return row ? row.username : `<@${userId}>`;
+}
+
+/** Like displayName but for plain-text logs: falls back to the raw id, no mention. */
+export function logName(userId) {
+  const row = getDb().prepare('SELECT username FROM users WHERE user_id = ?').get(userId);
+  return row ? row.username : userId;
 }
 
 export function closeDatabase() {

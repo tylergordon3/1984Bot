@@ -1,4 +1,4 @@
-import { getDb, rememberUser } from '../db/database.js';
+import { getDb, rememberUser, logName } from '../db/database.js';
 import { logger } from '../util/logger.js';
 import { MINUTE } from '../util/time.js';
 
@@ -17,7 +17,7 @@ function openSession(guildId, userId, channelId, at) {
        VALUES (?, ?, ?, ?, ?)`
     )
     .run(guildId, userId, channelId, at, at);
-  logger.debug(`voice: ${userId} joined ${channelId}`);
+  logger.debug(`voice: ${logName(userId)} joined ${channelId}`);
 }
 
 function closeSession(sessionId, at) {
@@ -31,6 +31,55 @@ function closeUserSession(userId, at) {
   return open;
 }
 
+// ── Flag (streaming / muted / deafened / video) mini-sessions ───────────────
+
+/** Which states are active for a voice state. Deafened supersedes muted. */
+function flagsOf(state) {
+  const active = new Set();
+  if (!state || !state.channelId) return active;
+  if (state.deaf) active.add('deafened');
+  else if (state.mute) active.add('muted'); // muted-but-not-deafened
+  if (state.streaming) active.add('streaming');
+  if (state.selfVideo) active.add('video');
+  return active;
+}
+
+function getOpenFlags(userId) {
+  return getDb()
+    .prepare('SELECT * FROM voice_flags WHERE user_id = ? AND ended_at IS NULL')
+    .all(userId);
+}
+
+function openFlag(guildId, userId, channelId, flag, at) {
+  getDb()
+    .prepare(
+      `INSERT INTO voice_flags (guild_id, user_id, channel_id, flag, started_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(guildId, userId, channelId, flag, at, at);
+  logger.debug(`flag on: ${logName(userId)} ${flag}`);
+}
+
+function closeFlag(id, at) {
+  getDb().prepare('UPDATE voice_flags SET ended_at = ? WHERE id = ?').run(at, id);
+}
+
+function closeUserFlags(userId, at) {
+  for (const f of getOpenFlags(userId)) closeFlag(f.id, at);
+}
+
+/** Reconcile a user's open flag rows against their currently-active flags. */
+function syncFlags(guildId, userId, channelId, active, at) {
+  const open = getOpenFlags(userId);
+  const openNames = new Set(open.map((o) => o.flag));
+  for (const flag of active) {
+    if (!openNames.has(flag)) openFlag(guildId, userId, channelId, flag, at);
+  }
+  for (const o of open) {
+    if (!active.has(o.flag)) closeFlag(o.id, at);
+  }
+}
+
 /** discord.js voiceStateUpdate handler. */
 export function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member || oldState.member;
@@ -39,12 +88,22 @@ export function handleVoiceStateUpdate(oldState, newState) {
   const now = Date.now();
   const oldChannel = oldState.channelId;
   const newChannel = newState.channelId;
-  if (oldChannel === newChannel) return; // mute/deafen/stream toggle — not a move
 
   rememberUser(member.id, member.user.username);
 
-  if (oldChannel) closeUserSession(member.id, now);
-  if (newChannel) openSession(newState.guild.id, member.id, newChannel, now);
+  // Channel transitions (join / leave / move).
+  if (oldChannel !== newChannel) {
+    if (oldChannel) {
+      closeUserSession(member.id, now);
+      closeUserFlags(member.id, now); // flags are channel-scoped; reopen below if still active
+    }
+    if (newChannel) openSession(newState.guild.id, member.id, newChannel, now);
+  }
+
+  // Flag transitions — also fires for same-channel mute/deafen/stream/video toggles.
+  if (newChannel) {
+    syncFlags(newState.guild.id, member.id, newChannel, flagsOf(newState), now);
+  }
 }
 
 /**
@@ -69,6 +128,11 @@ export function reconcileVoice(guild) {
       if (open) closeSession(open.id, open.last_seen_at); // they moved during downtime
       openSession(guild.id, member.id, state.channelId, now);
     }
+    // Adopt current flag states (opens new flag rows, keeps matching ones).
+    syncFlags(guild.id, member.id, state.channelId, flagsOf(state), now);
+    db.prepare(
+      'UPDATE voice_flags SET last_seen_at = ? WHERE user_id = ? AND ended_at IS NULL'
+    ).run(now, member.id);
   }
 
   // Anyone with an open session who is NOT currently connected left while we were down.
@@ -85,6 +149,11 @@ export function reconcileVoice(guild) {
       closeSession(row.id, row.last_seen_at);
       closed++;
     }
+  }
+
+  // Close flag rows orphaned by a crash (user no longer connected).
+  for (const f of db.prepare('SELECT * FROM voice_flags WHERE ended_at IS NULL').all()) {
+    if (!connected.has(f.user_id)) closeFlag(f.id, f.last_seen_at);
   }
   logger.info(`Voice reconciled: ${connected.size} active, ${closed} orphaned sessions closed.`);
 }
@@ -107,6 +176,9 @@ export function startVoiceHeartbeat(client) {
       }
       if (present) {
         db.prepare('UPDATE voice_sessions SET last_seen_at = ? WHERE id = ?').run(now, row.id);
+        db.prepare(
+          'UPDATE voice_flags SET last_seen_at = ? WHERE user_id = ? AND ended_at IS NULL'
+        ).run(now, row.user_id);
       }
     }
   };
@@ -114,11 +186,18 @@ export function startVoiceHeartbeat(client) {
   return () => clearInterval(handle);
 }
 
-/** Graceful shutdown: close every open session at "now". */
+/** Graceful shutdown: close every open session and flag at "now". */
 export function closeAllOpenVoiceSessions() {
   const now = Date.now();
   const info = getDb()
     .prepare('UPDATE voice_sessions SET left_at = ? WHERE left_at IS NULL')
     .run(now);
-  if (info.changes) logger.info(`Closed ${info.changes} open voice session(s) on shutdown.`);
+  const flags = getDb()
+    .prepare('UPDATE voice_flags SET ended_at = ? WHERE ended_at IS NULL')
+    .run(now);
+  if (info.changes || flags.changes) {
+    logger.info(
+      `Closed ${info.changes} open voice session(s) and ${flags.changes} flag(s) on shutdown.`
+    );
+  }
 }
