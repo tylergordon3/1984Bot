@@ -33,11 +33,18 @@ export function userLeaderboardLines(rows) {
     .join('\n');
 }
 
-export function baseEmbed(title, label) {
+/**
+ * Standard summary embed. Puts the period + concrete date range prominently at
+ * the top (author line, above the title), e.g. "Past 7 days · Jul 24 – Jul 31, 2026".
+ */
+export function baseEmbed(title, window) {
+  const label = window.label.charAt(0).toUpperCase() + window.label.slice(1);
+  const heading = window.range === 'all time' ? 'All time' : `${label} · ${window.range}`;
   return new EmbedBuilder()
     .setTitle(title)
     .setColor(0xcc0000)
-    .setFooter({ text: `1984Bot • ${label}` })
+    .setAuthor({ name: `📅 ${heading}` })
+    .setFooter({ text: '1984Bot' })
     .setTimestamp();
 }
 

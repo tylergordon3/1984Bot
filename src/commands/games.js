@@ -22,7 +22,7 @@ const gamestats = {
 
     const total = userGameTotal(target.id, window);
     const games = userGameStats(target.id, window, 12);
-    const embed = baseEmbed(`🎮 Game dossier — ${target.username}`, window.label);
+    const embed = baseEmbed(`🎮 Game dossier — ${target.username}`, window);
     if (total === 0) {
       embed.setDescription('_No games recorded for this period._');
     } else {
@@ -47,7 +47,7 @@ const gameleaderboard = {
   async execute(interaction) {
     const window = getWindow(interaction);
     const rows = gamePlayerLeaderboard(window, 15);
-    const embed = baseEmbed('🎮 Game-time Leaderboard', window.label).setDescription(
+    const embed = baseEmbed('🎮 Game-time Leaderboard', window).setDescription(
       userLeaderboardLines(rows)
     );
     await interaction.reply({ embeds: [embed] });
@@ -63,7 +63,7 @@ const topgames = {
   async execute(interaction) {
     const window = getWindow(interaction);
     const rows = guildTopGames(window, 15);
-    const embed = baseEmbed('🏆 Top games in the server', window.label);
+    const embed = baseEmbed('🏆 Top games in the server', window);
     if (rows.length === 0) {
       embed.setDescription('_No games recorded for this period._');
     } else {

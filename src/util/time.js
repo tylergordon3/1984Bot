@@ -5,25 +5,46 @@ export const MINUTE = 60 * SECOND;
 export const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
 
+/** e.g. "Jul 24 – Jul 31, 2026" (or "Jul 31, 2025 – Jul 31, 2026" across years). */
+export function formatDateRange(since, until) {
+  const s = new Date(since);
+  const u = new Date(until);
+  const sameYear = s.getFullYear() === u.getFullYear();
+  const sStr = s.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+  const uStr = u.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${sStr} – ${uStr}`;
+}
+
 /**
- * Resolve a named period into a { since, until, label } window ending "now".
- * Supported: day, week, month, year, all.
+ * Resolve a named period into a { since, until, label, range } window ending "now".
+ * `range` is the concrete calendar date range for display. Supported: day, week,
+ * month, year, all.
  */
 export function resolvePeriod(period = 'week') {
   const now = Date.now();
+  const make = (since, label) => ({
+    since,
+    until: now,
+    label,
+    range: since === 0 ? 'all time' : formatDateRange(since, now),
+  });
   switch (period) {
     case 'day':
-      return { since: now - DAY, until: now, label: 'past 24 hours' };
+      return make(now - DAY, 'past 24 hours');
     case 'week':
-      return { since: now - 7 * DAY, until: now, label: 'past 7 days' };
+      return make(now - 7 * DAY, 'past 7 days');
     case 'month':
-      return { since: now - 30 * DAY, until: now, label: 'past 30 days' };
+      return make(now - 30 * DAY, 'past 30 days');
     case 'year':
-      return { since: now - 365 * DAY, until: now, label: 'past 365 days' };
+      return make(now - 365 * DAY, 'past 365 days');
     case 'all':
-      return { since: 0, until: now, label: 'all time' };
+      return make(0, 'all time');
     default:
-      return { since: now - 7 * DAY, until: now, label: 'past 7 days' };
+      return make(now - 7 * DAY, 'past 7 days');
   }
 }
 

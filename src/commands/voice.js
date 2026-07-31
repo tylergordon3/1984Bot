@@ -26,7 +26,7 @@ const voiceleaderboard = {
   async execute(interaction) {
     const window = getWindow(interaction);
     const rows = voiceLeaderboard(window, 15);
-    const embed = baseEmbed('🎙️ Voice Leaderboard', window.label).setDescription(
+    const embed = baseEmbed('🎙️ Voice Leaderboard', window).setDescription(
       userLeaderboardLines(rows)
     );
     await interaction.reply({ embeds: [embed] });
@@ -48,7 +48,7 @@ const voicestats = {
     const total = voiceTotalForUser(target.id, window);
     const { aloneMs, companions } = voiceCompanions(target.id, window, 8);
 
-    const embed = baseEmbed(`🎙️ Voice dossier — ${target.username}`, window.label);
+    const embed = baseEmbed(`🎙️ Voice dossier — ${target.username}`, window);
     if (total === 0) {
       embed.setDescription('_No voice activity recorded for this period._');
       return interaction.reply({ embeds: [embed] });
@@ -102,7 +102,7 @@ const voiceflag = {
     const window = getWindow(interaction);
     const state = interaction.options.getString('state');
     const rows = voiceFlagLeaderboard(state, window, 15);
-    const embed = baseEmbed(`${FLAG_LABELS[state]} Leaderboard`, window.label).setDescription(
+    const embed = baseEmbed(`${FLAG_LABELS[state]} Leaderboard`, window).setDescription(
       userLeaderboardLines(rows)
     );
     await interaction.reply({ embeds: [embed] });
@@ -134,7 +134,7 @@ const voiceheatmap = {
     const window = getWindow(interaction);
     const hours = voiceHourHistogram(window);
     const busiest = hours.indexOf(Math.max(...hours));
-    const embed = baseEmbed('🕐 Voice activity by hour', window.label);
+    const embed = baseEmbed('🕐 Voice activity by hour', window);
     if (Math.max(...hours) === 0) {
       embed.setDescription('_No voice activity recorded for this period._');
     } else {
@@ -145,7 +145,7 @@ const voiceheatmap = {
           `(${formatDuration(hours[busiest])} of combined presence)`,
       });
     }
-    embed.setFooter({ text: `1984Bot • ${window.label} • server local time` });
+    embed.setFooter({ text: '1984Bot • server local time' });
     await interaction.reply({ embeds: [embed] });
   },
 };

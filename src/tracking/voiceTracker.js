@@ -4,10 +4,10 @@ import { MINUTE } from '../util/time.js';
 
 const HEARTBEAT_INTERVAL = MINUTE; // how often we refresh last_seen_at
 
-function getOpenSession(userId) {
+function getOpenSessions(userId) {
   return getDb()
-    .prepare('SELECT * FROM voice_sessions WHERE user_id = ? AND left_at IS NULL')
-    .get(userId);
+    .prepare('SELECT * FROM voice_sessions WHERE user_id = ? AND left_at IS NULL ORDER BY joined_at')
+    .all(userId);
 }
 
 function openSession(guildId, userId, channelId, at) {
@@ -24,11 +24,19 @@ function closeSession(sessionId, at) {
   getDb().prepare('UPDATE voice_sessions SET left_at = ? WHERE id = ?').run(at, sessionId);
 }
 
-/** Close whatever open session a user has (used on leave / channel move). */
-function closeUserSession(userId, at) {
-  const open = getOpenSession(userId);
-  if (open) closeSession(open.id, at);
-  return open;
+/**
+ * Ensure the user has exactly one open session, matching `channelId` (or none if
+ * they've left). Closes any extras — this makes tracking idempotent and self-heals
+ * duplicate sessions that older buggy events may have created. Returns true if a
+ * session for `channelId` is already open (so the caller shouldn't open another).
+ */
+function reconcileUserSessions(userId, channelId, at) {
+  const open = getOpenSessions(userId);
+  const keep = channelId ? open.find((s) => s.channel_id === channelId) : undefined;
+  for (const s of open) {
+    if (!keep || s.id !== keep.id) closeSession(s.id, at);
+  }
+  return Boolean(keep);
 }
 
 // ── Flag (streaming / muted / deafened / video) mini-sessions ───────────────
@@ -80,30 +88,38 @@ function syncFlags(guildId, userId, channelId, active, at) {
   }
 }
 
-/** discord.js voiceStateUpdate handler. */
+/**
+ * discord.js voiceStateUpdate handler.
+ *
+ * Driven by the DB's actual open-session state rather than `oldState.channelId`,
+ * which can come back null after a gateway reconnect and would otherwise spawn a
+ * duplicate concurrent session. Guarantees at most one open session per user.
+ */
 export function handleVoiceStateUpdate(oldState, newState) {
   const member = newState.member || oldState.member;
   if (!member || member.user.bot) return; // never track bots (including ourselves)
 
   const now = Date.now();
-  const oldChannel = oldState.channelId;
   const newChannel = newState.channelId;
 
   rememberUser(member.id, member.user.username);
 
-  // Channel transitions (join / leave / move).
-  if (oldChannel !== newChannel) {
-    if (oldChannel) {
-      closeUserSession(member.id, now);
-      closeUserFlags(member.id, now); // flags are channel-scoped; reopen below if still active
-    }
-    if (newChannel) openSession(newState.guild.id, member.id, newChannel, now);
+  if (!newChannel) {
+    // Left voice entirely: close session(s) and flags.
+    reconcileUserSessions(member.id, null, now);
+    closeUserFlags(member.id, now);
+    return;
+  }
+
+  // In a channel: keep/collapse to a single open session for it, opening one if needed.
+  const alreadyOpen = reconcileUserSessions(member.id, newChannel, now);
+  if (!alreadyOpen) {
+    closeUserFlags(member.id, now); // fresh session (join or move) — flags re-sync below
+    openSession(newState.guild.id, member.id, newChannel, now);
   }
 
   // Flag transitions — also fires for same-channel mute/deafen/stream/video toggles.
-  if (newChannel) {
-    syncFlags(newState.guild.id, member.id, newChannel, flagsOf(newState), now);
-  }
+  syncFlags(newState.guild.id, member.id, newChannel, flagsOf(newState), now);
 }
 
 /**
@@ -121,11 +137,16 @@ export function reconcileVoice(guild) {
     connected.add(member.id);
     rememberUser(member.id, member.user.username);
 
-    const open = getOpenSession(member.id);
-    if (open && open.channel_id === state.channelId) {
-      db.prepare('UPDATE voice_sessions SET last_seen_at = ? WHERE id = ?').run(now, open.id);
+    // Collapse to a single open session for their current channel; close extras /
+    // moved sessions at their last-seen time (best estimate of the real end).
+    const open = getOpenSessions(member.id);
+    const keep = open.find((s) => s.channel_id === state.channelId);
+    for (const s of open) {
+      if (!keep || s.id !== keep.id) closeSession(s.id, s.last_seen_at);
+    }
+    if (keep) {
+      db.prepare('UPDATE voice_sessions SET last_seen_at = ? WHERE id = ?').run(now, keep.id);
     } else {
-      if (open) closeSession(open.id, open.last_seen_at); // they moved during downtime
       openSession(guild.id, member.id, state.channelId, now);
     }
     // Adopt current flag states (opens new flag rows, keeps matching ones).
