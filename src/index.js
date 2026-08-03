@@ -15,6 +15,8 @@ import {
   startGameHeartbeat,
   closeAllOpenGameSessions,
 } from './tracking/gameTracker.js';
+import { handleMessageCreate, catchUpMessages } from './tracking/messageTracker.js';
+import { handleBotMention } from './messages/responder.js';
 import { destroyAllPlayers } from './music/player.js';
 
 initDatabase();
@@ -25,6 +27,10 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates, // voice join/leave tracking
     GatewayIntentBits.GuildPresences, // game / activity tracking  (privileged)
     GatewayIntentBits.GuildMembers, // member objects on presence  (privileged)
+    GatewayIntentBits.GuildMessages, // message + tag tracking, @-mention replies
+    // Message text, for word counts and keyword replies (privileged). Opt-out
+    // via MESSAGE_CONTENT=false so the bot still boots without the portal toggle.
+    ...(config.messageContent ? [GatewayIntentBits.MessageContent] : []),
   ],
 });
 
@@ -49,7 +55,17 @@ client.once(Events.ClientReady, async (c) => {
   reconcileVoice(guild);
   reconcileGames(guild);
   stopHeartbeats.push(startVoiceHeartbeat(client), startGameHeartbeat(client));
+  await catchUpMessages(guild).catch((err) => logger.warn(`Message catch-up failed: ${err.message}`));
   logger.info('1984Bot is watching. 👁️');
+});
+
+client.on(Events.MessageCreate, (message) => {
+  try {
+    handleMessageCreate(message);
+    if (config.mentionReplies) handleBotMention(message, client);
+  } catch (err) {
+    logger.error('messageCreate error:', err);
+  }
 });
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -103,4 +119,15 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('unhandledRejection', (reason) => logger.error('Unhandled rejection:', reason));
 
-client.login(config.token);
+client.login(config.token).catch((err) => {
+  if (/disallowed intents/i.test(err.message)) {
+    logger.error(
+      'Login rejected: a privileged intent is not enabled. Turn on Presence, ' +
+        'Server Members and Message Content in the Discord Developer Portal ' +
+        '(Bot tab), or set MESSAGE_CONTENT=false in .env to run without message text.'
+    );
+  } else {
+    logger.error('Login failed:', err);
+  }
+  process.exit(1);
+});

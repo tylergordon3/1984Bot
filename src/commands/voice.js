@@ -8,7 +8,15 @@ import {
   voiceFlagLeaderboard,
 } from '../stats/queries.js';
 import { rememberUser, displayName } from '../db/database.js';
-import { addPeriodOption, getWindow, userLeaderboardLines, baseEmbed, formatDuration } from './_shared.js';
+import {
+  addPeriodOption,
+  getWindow,
+  userLeaderboardLines,
+  baseEmbed,
+  formatDuration,
+  renderHeatmap,
+  hourLabel,
+} from './_shared.js';
 
 const FLAG_LABELS = {
   streaming: '🔴 Streaming',
@@ -109,21 +117,6 @@ const voiceflag = {
   },
 };
 
-function renderHeatmap(hours) {
-  const max = Math.max(...hours, 1);
-  const blocks = '▁▂▃▄▅▆▇█';
-  const lines = [];
-  for (let h = 0; h < 24; h += 12) {
-    let row = '';
-    for (let i = h; i < h + 12; i++) {
-      const level = hours[i] === 0 ? 0 : 1 + Math.floor((hours[i] / max) * (blocks.length - 1));
-      row += blocks[Math.min(level, blocks.length - 1)];
-    }
-    lines.push(`\`${String(h).padStart(2, '0')}:00\` ${row} \`${String(h + 11).padStart(2, '0')}:59\``);
-  }
-  return lines.join('\n');
-}
-
 const voiceheatmap = {
   data: addPeriodOption(
     new SlashCommandBuilder()
@@ -141,8 +134,7 @@ const voiceheatmap = {
       embed.setDescription(renderHeatmap(hours));
       embed.addFields({
         name: 'Peak hour',
-        value: `**${String(busiest).padStart(2, '0')}:00–${String(busiest).padStart(2, '0')}:59** ` +
-          `(${formatDuration(hours[busiest])} of combined presence)`,
+        value: `**${hourLabel(busiest)}** (${formatDuration(hours[busiest])} of combined presence)`,
       });
     }
     embed.setFooter({ text: '1984Bot • server local time' });

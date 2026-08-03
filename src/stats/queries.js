@@ -241,3 +241,200 @@ export function gamePlayerLeaderboard(window, limit = 15) {
     )
     .all({ now, since, until, limit });
 }
+
+// ── Messages ───────────────────────────────────────────────────────────────
+//
+// Messages are point events, so their windows are a simple half-open range on
+// sent_at. Hour-of-day is derived from sent_at in the server's local timezone.
+
+const HOUR_OF_DAY = `CAST(strftime('%H', sent_at / 1000, 'unixepoch', 'localtime') AS INTEGER)`;
+
+/**
+ * Shared WHERE fragment for message/mention queries.
+ * `fromHour` is inclusive and `toHour` exclusive; when fromHour > toHour the
+ * range wraps past midnight (e.g. 22 → 4 means "late night").
+ */
+function messageFilter(window, { channelId, fromHour, toHour } = {}) {
+  const clauses = ['sent_at >= @since', 'sent_at < @until'];
+  const params = { since: window.since, until: window.until };
+
+  if (channelId) {
+    clauses.push('channel_id = @channelId');
+    params.channelId = channelId;
+  }
+  if (fromHour != null || toHour != null) {
+    const from = fromHour ?? 0;
+    const to = toHour ?? 24;
+    if (from !== to) {
+      params.fromHour = from;
+      params.toHour = to;
+      clauses.push(
+        from < to
+          ? `${HOUR_OF_DAY} >= @fromHour AND ${HOUR_OF_DAY} < @toHour`
+          : `(${HOUR_OF_DAY} >= @fromHour OR ${HOUR_OF_DAY} < @toHour)`
+      );
+    }
+  }
+  return { where: clauses.join(' AND '), params };
+}
+
+/** Who sent the most messages, optionally within a channel and hour range. */
+export function messageLeaderboard(window, opts = {}, limit = 15) {
+  const { where, params } = messageFilter(window, opts);
+  return getDb()
+    .prepare(
+      `SELECT user_id, COUNT(*) AS messages, SUM(word_count) AS words
+       FROM messages
+       WHERE ${where}
+       GROUP BY user_id
+       ORDER BY messages DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** Totals for one user (or the whole server when userId is null). */
+export function messageTotals(userId, window, opts = {}) {
+  const { where, params } = messageFilter(window, opts);
+  const scope = userId ? `${where} AND user_id = @userId` : where;
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS messages,
+              COALESCE(SUM(word_count), 0) AS words,
+              COALESCE(SUM(char_count), 0) AS chars,
+              COALESCE(SUM(attachments), 0) AS attachments,
+              COALESCE(SUM(has_link), 0) AS links,
+              COALESCE(SUM(is_reply), 0) AS replies,
+              COUNT(DISTINCT user_id) AS people,
+              MIN(sent_at) AS first_at,
+              MAX(sent_at) AS last_at
+       FROM messages
+       WHERE ${scope}`
+    )
+    .get({ ...params, userId });
+  return row;
+}
+
+/** Message counts bucketed by local hour-of-day (0–23). */
+export function messageHourHistogram(window, opts = {}) {
+  const { where, params } = messageFilter(window, opts);
+  const scope = opts.userId ? `${where} AND user_id = @userId` : where;
+  const rows = getDb()
+    .prepare(
+      `SELECT ${HOUR_OF_DAY} AS hour, COUNT(*) AS messages
+       FROM messages
+       WHERE ${scope}
+       GROUP BY hour`
+    )
+    .all({ ...params, userId: opts.userId });
+  const hours = new Array(24).fill(0);
+  for (const r of rows) hours[r.hour] = r.messages;
+  return hours;
+}
+
+/** A user's most-used channels. */
+export function messageChannelBreakdown(userId, window, limit = 5) {
+  const { where, params } = messageFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT channel_id, COUNT(*) AS messages
+       FROM messages
+       WHERE ${where} AND user_id = @userId
+       GROUP BY channel_id
+       ORDER BY messages DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, userId, limit });
+}
+
+// ── Mentions (who tags whom) ───────────────────────────────────────────────
+
+/** Who tags `userId` the most. */
+export function taggedByLeaderboard(userId, window, limit = 10) {
+  const { where, params } = messageFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT from_user_id AS user_id, COUNT(*) AS tags
+       FROM message_mentions
+       WHERE ${where} AND to_user_id = @userId
+       GROUP BY from_user_id
+       ORDER BY tags DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, userId, limit });
+}
+
+/** Who `userId` tags the most. */
+export function tagsGivenLeaderboard(userId, window, limit = 10) {
+  const { where, params } = messageFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT to_user_id AS user_id, COUNT(*) AS tags
+       FROM message_mentions
+       WHERE ${where} AND from_user_id = @userId
+       GROUP BY to_user_id
+       ORDER BY tags DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, userId, limit });
+}
+
+/** Most-tagged people in the server. */
+export function mostTagged(window, limit = 10) {
+  const { where, params } = messageFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT to_user_id AS user_id, COUNT(*) AS tags,
+              COUNT(DISTINCT from_user_id) AS taggers
+       FROM message_mentions
+       WHERE ${where}
+       GROUP BY to_user_id
+       ORDER BY tags DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** Biggest taggers in the server. */
+export function biggestTaggers(window, limit = 10) {
+  const { where, params } = messageFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT from_user_id AS user_id, COUNT(*) AS tags,
+              COUNT(DISTINCT to_user_id) AS targets
+       FROM message_mentions
+       WHERE ${where}
+       GROUP BY from_user_id
+       ORDER BY tags DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** Strongest tagger → tagged pairs. */
+export function topTagPairs(window, limit = 10) {
+  const { where, params } = messageFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT from_user_id, to_user_id, COUNT(*) AS tags
+       FROM message_mentions
+       WHERE ${where}
+       GROUP BY from_user_id, to_user_id
+       ORDER BY tags DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** Tags exchanged between two specific people, in both directions. */
+export function tagsBetween(aId, bId, window) {
+  const { where, params } = messageFilter(window);
+  const count = getDb().prepare(
+    `SELECT COUNT(*) AS tags FROM message_mentions
+     WHERE ${where} AND from_user_id = @from AND to_user_id = @to`
+  );
+  return {
+    aToB: count.get({ ...params, from: aId, to: bId }).tags,
+    bToA: count.get({ ...params, from: bId, to: aId }).tags,
+  };
+}

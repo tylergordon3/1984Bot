@@ -52,10 +52,54 @@ CREATE INDEX IF NOT EXISTS idx_flag_user ON voice_flags (user_id, flag, started_
 CREATE INDEX IF NOT EXISTS idx_flag_name ON voice_flags (flag, started_at);
 CREATE INDEX IF NOT EXISTS idx_flag_open ON voice_flags (ended_at) WHERE ended_at IS NULL;
 
+-- One row per tracked message. Discrete events rather than sessions, so stats
+-- are plain counts over a window; hour-of-day is derived at query time from
+-- sent_at so nothing is denormalised.
+CREATE TABLE IF NOT EXISTS messages (
+  message_id    TEXT PRIMARY KEY,
+  guild_id      TEXT    NOT NULL,
+  channel_id    TEXT    NOT NULL,
+  user_id       TEXT    NOT NULL,
+  sent_at       INTEGER NOT NULL,
+  char_count    INTEGER NOT NULL DEFAULT 0,
+  word_count    INTEGER NOT NULL DEFAULT 0,
+  attachments   INTEGER NOT NULL DEFAULT 0,
+  has_link      INTEGER NOT NULL DEFAULT 0,
+  mention_count INTEGER NOT NULL DEFAULT 0,
+  is_reply      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_msg_user ON messages (user_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_msg_chan ON messages (channel_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_msg_time ON messages (sent_at);
+
+-- Who tagged whom. At most one row per (message, target): an @mention and a
+-- reply-ping to the same person collapse into a single tag, with the kind
+-- column recording which one it was, so counts are never double-inflated.
+CREATE TABLE IF NOT EXISTS message_mentions (
+  message_id   TEXT    NOT NULL,
+  guild_id     TEXT    NOT NULL,
+  channel_id   TEXT    NOT NULL,
+  from_user_id TEXT    NOT NULL,
+  to_user_id   TEXT    NOT NULL,
+  kind         TEXT    NOT NULL,   -- 'mention' | 'reply'
+  sent_at      INTEGER NOT NULL,
+  PRIMARY KEY (message_id, to_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mention_to   ON message_mentions (to_user_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_mention_from ON message_mentions (from_user_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_mention_pair ON message_mentions (from_user_id, to_user_id);
+
 -- Lightweight cache of display names so reports don't need live fetches.
 CREATE TABLE IF NOT EXISTS users (
   user_id   TEXT PRIMARY KEY,
   username  TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Same idea for channels, so message reports can print #the-resources.
+CREATE TABLE IF NOT EXISTS channels (
+  channel_id TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
 `;
@@ -89,6 +133,22 @@ export function rememberUser(userId, username) {
        ON CONFLICT(user_id) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at`
     )
     .run(userId, username, Date.now());
+}
+
+/** Upsert a channel name into the channels cache. */
+export function rememberChannel(channelId, name) {
+  if (!channelId || !name) return;
+  getDb()
+    .prepare(
+      `INSERT INTO channels (channel_id, name, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(channel_id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`
+    )
+    .run(channelId, name, Date.now());
+}
+
+export function channelName(channelId) {
+  const row = getDb().prepare('SELECT name FROM channels WHERE channel_id = ?').get(channelId);
+  return row ? `#${row.name}` : `<#${channelId}>`;
 }
 
 export function displayName(userId) {
