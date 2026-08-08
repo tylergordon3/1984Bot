@@ -4,7 +4,8 @@ OnFailure=notify@%n.service
 
 [Service]
 Type=oneshot
-# yt-dlp lives in /usr/local/bin and self-updates in place, so this needs root.
-# Passwordless sudo is already configured for this user; -n makes it fail loudly
-# rather than hang waiting for a password it can never receive.
-ExecStart=/usr/bin/sudo -n /usr/local/bin/yt-dlp -U
+# yt-dlp self-updates by rewriting its own binary, so it lives under ~/.local/bin
+# where this user owns it. An earlier version updated the copy in /usr/local/bin
+# via sudo, which only worked while a cached sudo credential happened to be
+# valid and failed once that expired.
+ExecStart=%h/.local/bin/yt-dlp -U
