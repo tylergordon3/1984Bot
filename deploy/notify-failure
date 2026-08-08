@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Emails an alert when a systemd unit fails. Wired up via OnFailure=notify@%n.service.
+#
+# Install to ~/bin/notify-failure. Expects RESEND_API and RESEND_EMAIL in the
+# environment (systemd supplies them from ~/secrets/notify.env).
+set -uo pipefail
+
+UNIT="${1:?usage: notify-failure <unit-name>}"
+: "${RESEND_API:?RESEND_API not set}"
+: "${RESEND_EMAIL:?RESEND_EMAIL not set}"
+
+STATUS="$(systemctl --user status "$UNIT" --no-pager --lines=0 2>&1 || true)"
+LOGS="$(journalctl --user -u "$UNIT" --no-pager --lines=40 2>&1 || true)"
+
+# Build the JSON body in python so the log text can contain quotes, newlines and
+# backslashes without corrupting the request.
+BODY="$(python3 - "$UNIT" "$STATUS" "$LOGS" "$RESEND_EMAIL" <<'PY'
+import json, sys, socket, datetime
+unit, status, logs, to = sys.argv[1:5]
+html = (
+    f"<b>Unit:</b> {unit}<br>"
+    f"<b>Host:</b> {socket.gethostname()}<br>"
+    f"<b>Time:</b> {datetime.datetime.now().astimezone():%Y-%m-%d %H:%M:%S %Z}<br><br>"
+    f"<b>Status</b><pre>{status}</pre>"
+    f"<b>Last 40 log lines</b><pre>{logs}</pre>"
+)
+print(json.dumps({
+    "from": "Pi Alerts <onboarding@resend.dev>",
+    "to": to,
+    "subject": f"{unit} FAILED on {socket.gethostname()}",
+    "html": html,
+}))
+PY
+)"
+
+curl -fsS -X POST https://api.resend.com/emails \
+  -H "Authorization: Bearer $RESEND_API" \
+  -H "Content-Type: application/json" \
+  -d "$BODY" >/dev/null && echo "alert sent for $UNIT" || echo "alert FAILED for $UNIT" >&2

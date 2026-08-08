@@ -1,0 +1,9 @@
+; Generic failure notifier, reused by every app's OnFailure=notify@%n.service.
+; Install once per machine; %i is the unit that failed.
+[Unit]
+Description=Failure notification for %i
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/secrets/notify.env
+ExecStart=%h/bin/notify-failure %i

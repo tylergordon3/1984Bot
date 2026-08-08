@@ -2,19 +2,24 @@
 Description=1984Bot Discord bot
 After=network-online.target
 Wants=network-online.target
+OnFailure=notify@%n.service
 
 [Service]
 Type=simple
-# Adjust User and WorkingDirectory to match your Pi.
-User=pi
-WorkingDirectory=/home/pi/1984Bot
+WorkingDirectory=%h/apps/1984Bot
 ExecStart=/usr/bin/node src/index.js
+# Secrets live outside the repo and are never committed. See deploy/README.md.
+EnvironmentFile=%h/secrets/1984bot.env
+Environment=NODE_ENV=production
 Restart=on-failure
 RestartSec=5
-# Give the bot a moment to close open sessions cleanly on stop/restart.
+# Give the bot a moment to close open voice/game sessions cleanly on stop.
 KillSignal=SIGTERM
 TimeoutStopSec=15
-Environment=NODE_ENV=production
+# Don't fight a genuinely broken deploy: give up after 5 crashes in 5 minutes
+# so OnFailure= fires instead of looping forever.
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
