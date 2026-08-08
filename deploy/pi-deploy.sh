@@ -12,6 +12,19 @@ cd "$(git rev-parse --show-toplevel)"
 log() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
 ########################################
+# SECRETS
+########################################
+# systemd hands the service its own environment via EnvironmentFile=, but the
+# steps below (slash-command registration) run as plain commands outside the
+# unit, so they need the same variables loaded here.
+SECRETS="$HOME/secrets/1984bot.env"
+[ -f "$SECRETS" ] || { echo "❌ no secrets at $SECRETS — see deploy/pi-bootstrap.sh"; exit 1; }
+set -o allexport
+# shellcheck source=/dev/null
+. "$SECRETS"
+set +o allexport
+
+########################################
 # PULL
 ########################################
 BRANCH="$(git branch --show-current)"
