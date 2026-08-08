@@ -1,0 +1,9 @@
+[Unit]
+Description=1984Bot nightly SQLite snapshot
+OnFailure=notify@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/apps/1984Bot
+EnvironmentFile=%h/secrets/1984bot.env
+ExecStart=%h/apps/1984Bot/deploy/backup.sh

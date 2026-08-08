@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly yt-dlp update
+
+[Timer]
+# YouTube changes break extraction with no warning and the only symptom is
+# /play failing, so stay current rather than debugging it later.
+OnCalendar=Sun 05:00:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

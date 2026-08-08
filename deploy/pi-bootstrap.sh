@@ -47,9 +47,10 @@ chmod 600 "$SECRETS"
 ########################################
 mkdir -p "$UNIT_DIR" "$HOME/bin" data
 
-# Symlink rather than copy, so a git pull updates the unit definition too.
-ln -sfn "$PWD/deploy/$UNIT.service" "$UNIT_DIR/$UNIT.service"
-ln -sfn "$PWD/deploy/notify@.service" "$UNIT_DIR/notify@.service"
+# Symlink rather than copy, so a git pull updates the unit definitions too.
+for f in deploy/*.service deploy/*.timer; do
+  ln -sfn "$PWD/$f" "$UNIT_DIR/$(basename "$f")"
+done
 install -m 755 deploy/notify-failure "$HOME/bin/notify-failure"
 log "units linked into $UNIT_DIR"
 
@@ -58,7 +59,10 @@ loginctl enable-linger "$USER"
 
 systemctl --user daemon-reload
 systemctl --user enable "$UNIT"
-log "$UNIT enabled at boot"
+# Timers are enabled and started here; their .service siblings are triggered by
+# the timer, never enabled directly.
+systemctl --user enable --now 1984bot-backup.timer ytdlp-update.timer
+log "$UNIT enabled at boot; backup and yt-dlp timers armed"
 
 ########################################
 # FIRST DEPLOY

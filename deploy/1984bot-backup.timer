@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly 1984Bot SQLite snapshot
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+# Run on next boot if the Pi was off at 04:15 — a missed backup is the one you
+# end up needing.
+Persistent=true
+# Don't have every timer on the box fire at the same instant.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
