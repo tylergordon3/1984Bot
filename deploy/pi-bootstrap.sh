@@ -19,6 +19,10 @@ for c in node npm ffmpeg yt-dlp sqlite3; do
   command -v "$c" >/dev/null || { echo "❌ missing: $c"; exit 1; }
 done
 
+# See the note in pi-deploy.sh: the native opus build needs GCC 12, not 14.
+command -v gcc-12 >/dev/null || {
+  echo "❌ missing gcc-12 — run: sudo apt-get install -y gcc-12 g++-12"; exit 1; }
+
 if [ ! -f "$SECRETS" ]; then
   cat >&2 <<EOF
 ❌ No secrets file at $SECRETS

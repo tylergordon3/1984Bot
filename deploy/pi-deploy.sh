@@ -38,6 +38,13 @@ changed() { ! git diff --quiet "$BEFORE" "$AFTER" -- "$@"; }
 # never copied from the laptop — it's always built here, on ARM.
 if [ ! -d node_modules ] || changed package-lock.json package.json; then
   log "installing dependencies (native modules may take a few minutes)"
+  # @discordjs/opus bundles an opus release that predates GCC 14, which turned
+  # -Wincompatible-pointer-types and -Wimplicit-function-declaration into hard
+  # errors. Debian 13 defaults to GCC 14, so pin this build to 12. (Upgrading
+  # the package doesn't help — 0.10.0 fails the same way.)
+  if command -v gcc-12 >/dev/null; then
+    export CC=gcc-12 CXX=g++-12
+  fi
   npm ci --omit=dev
 else
   log "dependencies unchanged"
