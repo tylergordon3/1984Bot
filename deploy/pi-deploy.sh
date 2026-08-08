@@ -92,9 +92,9 @@ sleep 8
 
 if systemctl --user is-active --quiet "$UNIT"; then
   log "✅ $UNIT is running ($(git rev-parse --short HEAD))"
-  journalctl --user -u "$UNIT" --no-pager --lines=8 --since "1 min ago"
+  journalctl --user-unit="$UNIT" --no-pager --lines=8 --since "1 min ago"
 else
   log "❌ $UNIT failed to start"
-  journalctl --user -u "$UNIT" --no-pager --lines=40
+  journalctl --user-unit="$UNIT" --no-pager --lines=40
   exit 1
 fi

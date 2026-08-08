@@ -10,7 +10,7 @@ UNIT="${1:?usage: notify-failure <unit-name>}"
 : "${RESEND_EMAIL:?RESEND_EMAIL not set}"
 
 STATUS="$(systemctl --user status "$UNIT" --no-pager --lines=0 2>&1 || true)"
-LOGS="$(journalctl --user -u "$UNIT" --no-pager --lines=40 2>&1 || true)"
+LOGS="$(journalctl --user-unit="$UNIT" --no-pager --lines=40 2>&1 || true)"
 
 # Build the JSON body in python so the log text can contain quotes, newlines and
 # backslashes without corrupting the request.
