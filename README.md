@@ -106,16 +106,76 @@ It's safe to re-run — every message is keyed by id and imported at most once.
 
 ## Running 24/7 on the Pi (systemd)
 
+The bot runs as a systemd **user** unit, so nothing here needs `sudo` and the
+unit files are symlinked straight out of the repo — a `git pull` updates the
+service definition along with the code.
+
+### One-time setup
+
+Install the system dependencies (sections 2 above), plus `gcc-12`:
+
 ```bash
-sudo cp deploy/1984bot.service /etc/systemd/system/1984bot.service
-sudo nano /etc/systemd/system/1984bot.service   # set User + WorkingDirectory + node path
-sudo systemctl daemon-reload
-sudo systemctl enable --now 1984bot
-journalctl -u 1984bot -f                          # live logs
+sudo apt-get install -y gcc-12 g++-12 sqlite3
 ```
 
-The service uses `SIGTERM` on stop so the bot closes any open voice/game sessions
-cleanly before exiting.
+`@discordjs/opus` bundles an opus release that predates GCC 14, which turned
+`-Wincompatible-pointer-types` and `-Wimplicit-function-declaration` into hard
+errors. Debian 13 and Ubuntu 24.10+ default to GCC 14, so the native build is
+pinned to 12. Upgrading the package doesn't help — 0.10.0 fails the same way.
+
+Secrets live outside the repo, in `~/secrets/1984bot.env`, and are handed to the
+service by `EnvironmentFile=`. Create it from `.env.example` — at minimum
+`DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID`, and an absolute `DATABASE_PATH`:
+
+```bash
+install -m 600 /dev/null ~/secrets/1984bot.env
+```
+
+For the failure alerts, `~/secrets/notify.env` needs `RESEND_API` and
+`RESEND_EMAIL`. Then:
+
+```bash
+git clone git@github.com:tylergordon3/1984Bot.git ~/apps/1984Bot && cd ~/apps/1984Bot && ./deploy/pi-bootstrap.sh
+```
+
+That links the units, enables lingering (so the bot starts at boot without
+anyone logging in), arms the timers, and runs the first deploy.
+
+### Deploying afterwards
+
+```bash
+ssh <pi> 'cd ~/apps/1984Bot && ./deploy/pi-deploy.sh'
+```
+
+The script is idempotent: it skips `npm ci` unless the lockfile moved, skips
+slash-command registration unless `src/commands` changed, restarts the unit and
+then health-checks it, failing loudly with the last 40 log lines if the bot
+didn't survive startup.
+
+### Operating
+
+```bash
+systemctl --user status 1984bot
+journalctl --user-unit=1984bot -f
+```
+
+Use `--user-unit=` rather than `--user -u`: the latter reads per-user journal
+files that only exist once journald has flushed to persistent storage.
+
+The service stops with `SIGTERM` so the bot closes any open voice/game sessions
+cleanly before exiting, and gives up after 5 crashes in 5 minutes so a broken
+deploy raises an alert instead of restarting forever.
+
+### What runs on a schedule
+
+| Timer | When | What |
+|---|---|---|
+| `1984bot-backup.timer` | 04:15 daily | `sqlite3 .backup` snapshot to `~/backups/1984bot`, integrity-checked, gzipped, pruned past 14 days |
+| `ytdlp-update.timer` | Sundays 05:00 | `yt-dlp -U`, since YouTube changes break extraction with no warning |
+
+Both are `Persistent=true`, so a run missed while the Pi was off happens at next
+boot. Any unit that fails triggers `notify@`, which emails the last 40 log lines
+via Resend.
 
 ---
 
