@@ -89,6 +89,35 @@ CREATE INDEX IF NOT EXISTS idx_mention_to   ON message_mentions (to_user_id, sen
 CREATE INDEX IF NOT EXISTS idx_mention_from ON message_mentions (from_user_id, sent_at);
 CREATE INDEX IF NOT EXISTS idx_mention_pair ON message_mentions (from_user_id, to_user_id);
 
+-- NWS alerts already posted to Discord, so restarts don't repost an active
+-- warning. One row per (alert, watched location), since one storm system can
+-- cover two locations. Rows are pruned after a week; ids aren't reused sooner.
+CREATE TABLE IF NOT EXISTS weather_alerts_sent (
+  alert_id TEXT NOT NULL,
+  location TEXT NOT NULL,
+  event    TEXT NOT NULL,
+  sent_at  INTEGER NOT NULL,
+  PRIMARY KEY (alert_id, location)
+);
+
+-- Watched weather locations, managed by the /weather command (seeded once
+-- from WEATHER_LOCATIONS in .env if the table is empty at boot).
+CREATE TABLE IF NOT EXISTS weather_locations (
+  name       TEXT PRIMARY KEY COLLATE NOCASE,
+  lat        TEXT NOT NULL,
+  lon        TEXT NOT NULL,
+  added_by   TEXT NOT NULL,   -- user id, or 'env' for seeded rows
+  created_at INTEGER NOT NULL
+);
+
+-- Who gets pinged when a watched location gets a warning.
+CREATE TABLE IF NOT EXISTS weather_subscribers (
+  location_name TEXT NOT NULL COLLATE NOCASE,
+  user_id       TEXT NOT NULL,
+  created_at    INTEGER NOT NULL,
+  PRIMARY KEY (location_name, user_id)
+);
+
 -- Lightweight cache of display names so reports don't need live fetches.
 CREATE TABLE IF NOT EXISTS users (
   user_id   TEXT PRIMARY KEY,
@@ -115,6 +144,12 @@ export function initDatabase() {
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // Early builds keyed weather_alerts_sent on alert_id alone; drop so the
+  // per-location schema below can take its place (only dedupe cache is lost).
+  const weatherCols = db.pragma(`table_info(weather_alerts_sent)`).map((c) => c.name);
+  if (weatherCols.length > 0 && !weatherCols.includes('location')) {
+    db.exec('DROP TABLE weather_alerts_sent');
+  }
   db.exec(SCHEMA);
   logger.info(`Database ready at ${dbPath}`);
   return db;

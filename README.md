@@ -14,6 +14,11 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   of day, e.g. *only after 2pm*), when each person is most active, and a full
   tag graph: who tags whom, who gets tagged most, and who never tags back.
 - **It answers when you @ it** — with something it actually knows about you.
+- **Severe weather alerts** — polls the National Weather Service and posts
+  Severe Thunderstorm / Tornado Warnings for watched locations to a channel,
+  pinging each location's subscribers. Anyone can `/weather add` a US place by
+  name (geocoded automatically) and `/weather subscribe` to be pinged;
+  `/weather list` shows who's watching what.
 
 Designed to run passively on a Raspberry Pi with a single SQLite file for storage.
 

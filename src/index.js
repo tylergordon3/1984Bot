@@ -18,6 +18,7 @@ import {
 import { handleMessageCreate, catchUpMessages } from './tracking/messageTracker.js';
 import { handleBotMention } from './messages/responder.js';
 import { destroyAllPlayers } from './music/player.js';
+import { startWeatherWatcher } from './weather/alerts.js';
 
 initDatabase();
 
@@ -55,6 +56,7 @@ client.once(Events.ClientReady, async (c) => {
   reconcileVoice(guild);
   reconcileGames(guild);
   stopHeartbeats.push(startVoiceHeartbeat(client), startGameHeartbeat(client));
+  stopHeartbeats.push(startWeatherWatcher(client));
   await catchUpMessages(guild).catch((err) => logger.warn(`Message catch-up failed: ${err.message}`));
   logger.info('1984Bot is watching. 👁️');
 });
@@ -85,6 +87,15 @@ client.on(Events.PresenceUpdate, (oldPresence, newPresence) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    const command = commands.get(interaction.commandName);
+    if (command?.autocomplete) {
+      await command.autocomplete(interaction).catch((err) =>
+        logger.warn(`Autocomplete for /${interaction.commandName} failed: ${err.message}`)
+      );
+    }
+    return;
+  }
   if (!interaction.isChatInputCommand()) return;
   const command = commands.get(interaction.commandName);
   if (!command) return;
