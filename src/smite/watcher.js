@@ -7,6 +7,7 @@ import { findTextChannel } from '../util/channels.js';
 import { findGodIn, godDisplayName, godPageUrl } from './gods.js';
 import { extractPlayerUuid, getPlayer, matchPageUrl } from './store.js';
 import { fetchStatCard } from './smite2live.js';
+import { autoLinkSmite2Live } from './autolink.js';
 import { SMITE_EMBED_COLOR, addStatFields, profileLinks } from './embeds.js';
 
 // A relaunch (crash, queue-dodge restart) inside this window doesn't re-announce.
@@ -74,7 +75,16 @@ async function announce(guild, member, activity, info, reason) {
     logger.warn(`SMITE: channel "${config.smiteChannel}" not found in guild.`);
     return;
   }
-  const player = getPlayer(member.id);
+  let player = getPlayer(member.id);
+  if (!player?.s2l_platform) {
+    // Unlinked player: maybe one of their Discord names IS their in-game name.
+    player =
+      (await autoLinkSmite2Live(member.id, [
+        member.nickname,
+        member.user?.globalName,
+        member.user?.username,
+      ]).catch(() => null)) || player;
+  }
   const card =
     player?.s2l_platform && player?.s2l_id
       ? await fetchStatCard(player.s2l_platform, player.s2l_id)

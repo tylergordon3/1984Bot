@@ -10,6 +10,7 @@ import {
   listLinkedPlayers,
 } from '../smite/store.js';
 import { resolveProfile, fetchOverview, fetchStatCard, profileUrl } from '../smite/smite2live.js';
+import { autoLinkSmite2Live } from '../smite/autolink.js';
 import { SMITE_EMBED_COLOR, statCardEmbed } from '../smite/embeds.js';
 
 const smite = {
@@ -33,9 +34,12 @@ const smite = {
     .addSubcommand((sub) =>
       sub
         .setName('stats')
-        .setDescription('Show a linked member’s SMITE 2 stat card')
+        .setDescription('Show a SMITE 2 stat card for a member or any player name')
         .addUserOption((o) =>
           o.setName('user').setDescription('Whose stats (defaults to you)')
+        )
+        .addStringOption((o) =>
+          o.setName('name').setDescription('Look up any exact in-game name instead')
         )
     )
     .addSubcommand((sub) =>
@@ -102,20 +106,55 @@ async function execLink(interaction) {
 }
 
 async function execStats(interaction) {
-  const target = interaction.options.getUser('user') || interaction.user;
-  const player = getPlayer(target.id);
-  if (!player?.s2l_platform) {
-    return interaction.reply({
-      content: `<@${target.id}> has no linked smite2.live profile — \`/smite link\` an in-game name first.`,
-      ephemeral: true,
+  await interaction.deferReply();
+
+  // An explicit name looks up any player, linked or not.
+  const name = interaction.options.getString('name')?.trim();
+  if (name) {
+    const resolved = await resolveProfile(name).catch(() => null);
+    if (!resolved) {
+      return interaction.editReply(
+        `Couldn't find **${name}** on smite2.live — in-game names must match exactly.`
+      );
+    }
+    const card = await fetchStatCard(resolved.platform, resolved.id);
+    if (!card) {
+      return interaction.editReply('smite2.live is not answering right now — try again in a bit.');
+    }
+    return interaction.editReply({
+      embeds: [statCardEmbed(name, card, { s2l_platform: resolved.platform, s2l_id: resolved.id })],
     });
   }
-  await interaction.deferReply();
+
+  const target = interaction.options.getUser('user') || interaction.user;
+  let player = getPlayer(target.id);
+  let autoLinked = false;
+  if (!player?.s2l_platform) {
+    // No link yet — try their Discord names before giving up.
+    const member = await interaction.guild?.members.fetch(target.id).catch(() => null);
+    player = await autoLinkSmite2Live(
+      target.id,
+      [member?.nickname, target.globalName, target.username],
+      { force: true }
+    );
+    autoLinked = !!player;
+  }
+  if (!player?.s2l_platform) {
+    return interaction.editReply(
+      `Couldn't find <@${target.id}> on smite2.live — none of their Discord names match an ` +
+        'in-game name. They can `/smite link` their exact SMITE 2 name (or you can run ' +
+        '`/smite link profile:<name> user:@them`), or use `/smite stats name:<in-game name>` ' +
+        'for a one-off lookup.'
+    );
+  }
   const card = await fetchStatCard(player.s2l_platform, player.s2l_id);
   if (!card) {
     return interaction.editReply('smite2.live is not answering right now — try again in a bit.');
   }
   return interaction.editReply({
+    content: autoLinked
+      ? `🔗 Auto-matched to **${player.s2l_name || '?'}** by Discord name and linked — \`/smite unlink\` if that's not them.`
+      : undefined,
     embeds: [statCardEmbed(displayName(target.id), card, player)],
   });
 }
