@@ -155,7 +155,7 @@ async function execStats(interaction) {
     content: autoLinked
       ? `🔗 Auto-matched to **${player.s2l_name || '?'}** by Discord name and linked — \`/smite unlink\` if that's not them.`
       : undefined,
-    embeds: [statCardEmbed(displayName(target.id), card, player)],
+    embeds: [statCardEmbed(await memberName(interaction.guild, target.id), card, player)],
   });
 }
 
@@ -175,21 +175,29 @@ async function execList(interaction) {
   const embed = new EmbedBuilder().setColor(SMITE_EMBED_COLOR).setTitle('⚔️ Linked SMITE profiles');
   if (rows.length === 0) {
     embed.setDescription('_Nobody has linked a profile yet — `/smite link` your in-game name._');
-  } else {
-    embed.setDescription(
-      rows
-        .map((r) => {
+    return interaction.reply({ embeds: [embed] });
+  }
+  embed.setDescription(
+    (
+      await Promise.all(
+        rows.map(async (r) => {
           const links = [];
           if (r.s2l_platform && r.s2l_id) {
             links.push(`[${r.s2l_name || 'smite2.live'}](${profileUrl(r.s2l_platform, r.s2l_id)})`);
           }
           if (r.player_uuid) links.push(`[SmiteSource](${playerPageUrl(r.player_uuid)})`);
-          return `${displayName(r.user_id)} — ${links.join(' · ') || '_nothing linked_'}`;
+          return `${await memberName(interaction.guild, r.user_id)} — ${links.join(' · ') || '_nothing linked_'}`;
         })
-        .join('\n')
-    );
-  }
+      )
+    ).join('\n')
+  );
   return interaction.reply({ embeds: [embed] });
+}
+
+/** Server display name, falling back to the cached username. */
+async function memberName(guild, userId) {
+  const member = await guild?.members.fetch(userId).catch(() => null);
+  return member?.displayName || displayName(userId);
 }
 
 export default [smite];
