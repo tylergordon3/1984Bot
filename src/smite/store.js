@@ -62,6 +62,20 @@ export function linkSmite2Live(userId, { platform, id, profileId, name }) {
   });
 }
 
+/**
+ * Remember an in-game name smite2.live doesn't know yet. Auto-link retries
+ * it until the site starts tracking the player, then fills in the ids.
+ */
+export function setPendingName(userId, name) {
+  upsert(userId, {
+    s2l_name: name,
+    s2l_platform: null,
+    s2l_id: null,
+    s2l_profile_id: null,
+    last_match_id: null,
+  });
+}
+
 export function unlinkPlayer(userId) {
   return getDb().prepare('DELETE FROM smite_players WHERE user_id = ?').run(userId).changes > 0;
 }

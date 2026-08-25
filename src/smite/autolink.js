@@ -16,7 +16,10 @@ const attempted = new Map(); // userId -> ts
 export async function autoLinkSmite2Live(userId, names, { force = false } = {}) {
   if (!force && Date.now() - (attempted.get(userId) || 0) < RETRY_AFTER) return null;
   attempted.set(userId, Date.now());
-  for (const name of [...new Set(names.filter(Boolean))]) {
+  // A stored pending in-game name (from /smite link before smite2.live
+  // tracked the player) beats guesses from Discord names.
+  const pending = getPlayer(userId)?.s2l_name;
+  for (const name of [...new Set([pending, ...names].filter(Boolean))]) {
     const resolved = await resolveProfile(name).catch(() => null);
     if (!resolved) continue;
     const overview = await fetchOverview(resolved.platform, resolved.id).catch(() => null);

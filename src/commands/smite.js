@@ -4,6 +4,7 @@ import {
   extractPlayerUuid,
   linkSmiteSource,
   linkSmite2Live,
+  setPendingName,
   unlinkPlayer,
   getPlayer,
   playerPageUrl,
@@ -86,9 +87,13 @@ async function execLink(interaction) {
   await interaction.deferReply();
   const resolved = await resolveProfile(query).catch(() => null);
   if (!resolved) {
+    // smite2.live only indexes players it has already seen in matches, so a
+    // real name can still miss. Keep it and retry until the site catches up.
+    setPendingName(target.id, query);
     return interaction.editReply(
-      `Couldn't find **${query}** on smite2.live — the name must match exactly. ` +
-        'Search yourself at <https://smite2.live> and paste your profile URL if in doubt.'
+      `👁️ Saved **${query}** for ${who.toLowerCase() === 'you' ? 'you' : who}. smite2.live doesn't ` +
+        "track this player yet (it only knows players it has seen in matches) — I'll keep " +
+        'checking and stats will appear automatically once they do.'
     );
   }
   const overview = await fetchOverview(resolved.platform, resolved.id).catch(() => null);
@@ -140,11 +145,15 @@ async function execStats(interaction) {
     autoLinked = !!player;
   }
   if (!player?.s2l_platform) {
+    const pending = getPlayer(target.id)?.s2l_name;
     return interaction.editReply(
-      `Couldn't find <@${target.id}> on smite2.live — none of their Discord names match an ` +
-        'in-game name. They can `/smite link` their exact SMITE 2 name (or you can run ' +
-        '`/smite link profile:<name> user:@them`), or use `/smite stats name:<in-game name>` ' +
-        'for a one-off lookup.'
+      pending
+        ? `smite2.live still doesn't track **${pending}** — stats appear once they've been ` +
+            'seen in a tracked match. No action needed; I keep checking.'
+        : `Couldn't find <@${target.id}> on smite2.live — none of their Discord names match an ` +
+            'in-game name. They can `/smite link` their exact SMITE 2 name (or you can run ' +
+            '`/smite link profile:<name> user:@them`), or use `/smite stats name:<in-game name>` ' +
+            'for a one-off lookup.'
     );
   }
   const card = await fetchStatCard(player.s2l_platform, player.s2l_id);
@@ -184,6 +193,8 @@ async function execList(interaction) {
           const links = [];
           if (r.s2l_platform && r.s2l_id) {
             links.push(`[${r.s2l_name || 'smite2.live'}](${profileUrl(r.s2l_platform, r.s2l_id)})`);
+          } else if (r.s2l_name) {
+            links.push(`⏳ ${r.s2l_name} (awaiting smite2.live tracking)`);
           }
           if (r.player_uuid) links.push(`[SmiteSource](${playerPageUrl(r.player_uuid)})`);
           return `${await memberName(interaction.guild, r.user_id)} — ${links.join(' · ') || '_nothing linked_'}`;
