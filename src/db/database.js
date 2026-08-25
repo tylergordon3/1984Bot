@@ -118,6 +118,14 @@ CREATE TABLE IF NOT EXISTS weather_subscribers (
   PRIMARY KEY (location_name, user_id)
 );
 
+-- Discord user → SmiteSource player-page UUID, linked via /smite link, so
+-- SMITE session announcements can point at the member's live profile.
+CREATE TABLE IF NOT EXISTS smite_players (
+  user_id     TEXT PRIMARY KEY,
+  player_uuid TEXT NOT NULL,
+  linked_at   INTEGER NOT NULL
+);
+
 -- Lightweight cache of display names so reports don't need live fetches.
 CREATE TABLE IF NOT EXISTS users (
   user_id   TEXT PRIMARY KEY,

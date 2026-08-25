@@ -66,6 +66,10 @@ export const config = {
   ),
   // '', 'here', 'everyone', or a role id to ping with each alert.
   weatherMention: (process.env.WEATHER_MENTION || '').trim(),
+  // Announce SMITE 2 sessions (with SmiteSource links) as members start playing.
+  smiteWatch: process.env.SMITE_WATCH !== 'false',
+  // Channel (name or id) the SMITE session posts go to.
+  smiteChannel: (process.env.SMITE_CHANNEL || 'gord-bot').replace(/^#/, '').toLowerCase(),
   databasePath: process.env.DATABASE_PATH || './data/1984bot.sqlite',
   logLevel: process.env.LOG_LEVEL || 'info',
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',

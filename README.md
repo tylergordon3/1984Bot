@@ -19,6 +19,12 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   pinging each location's subscribers. Anyone can `/weather add` a US place by
   name (geocoded automatically) and `/weather subscribe` to be pinged;
   `/weather list` shows who's watching what.
+- **SMITE 2 watch** — when a member starts playing SMITE 2, posts an embed with
+  whatever their Discord rich presence reveals (god, mode, live match) plus
+  links to the matching [SmiteSource](https://smitesource.com) pages — the god's
+  build guide, the live match page when detectable, and the member's tracker
+  profile if they've linked it with `/smite link`. Discord unfurls the
+  SmiteSource link into its own preview card. `SMITE_WATCH=false` turns it off.
 
 Designed to run passively on a Raspberry Pi with a single SQLite file for storage.
 
@@ -211,6 +217,12 @@ via Resend.
 - `/tagstats [user] [period]` — who tags this person the most, who they tag back,
   and where the tagging is most one-sided
 - `/tagleaderboard [period]` — most-tagged people, biggest taggers, closest pairs
+
+**SMITE:**
+- `/smite link profile:<url> [user]` — link a SmiteSource tracker profile
+  (search yourself at [smitesource.com/tracker](https://smitesource.com/tracker),
+  open your profile, paste the `smitesource.com/player/...` URL)
+- `/smite unlink [user]` · `/smite list`
 
 `period` is one of `day` / `week` / `month` / `year` / `all` (default `week`).
 

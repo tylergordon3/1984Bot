@@ -19,6 +19,7 @@ import { handleMessageCreate, catchUpMessages } from './tracking/messageTracker.
 import { handleBotMention } from './messages/responder.js';
 import { destroyAllPlayers } from './music/player.js';
 import { startWeatherWatcher } from './weather/alerts.js';
+import { handleSmitePresence, seedSmiteSessions } from './smite/watcher.js';
 
 initDatabase();
 
@@ -55,6 +56,7 @@ client.once(Events.ClientReady, async (c) => {
 
   reconcileVoice(guild);
   reconcileGames(guild);
+  if (config.smiteWatch) seedSmiteSessions(guild);
   stopHeartbeats.push(startVoiceHeartbeat(client), startGameHeartbeat(client));
   stopHeartbeats.push(startWeatherWatcher(client));
   await catchUpMessages(guild).catch((err) => logger.warn(`Message catch-up failed: ${err.message}`));
@@ -81,6 +83,7 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 client.on(Events.PresenceUpdate, (oldPresence, newPresence) => {
   try {
     handlePresenceUpdate(oldPresence, newPresence);
+    if (config.smiteWatch) handleSmitePresence(oldPresence, newPresence);
   } catch (err) {
     logger.error('presenceUpdate error:', err);
   }
