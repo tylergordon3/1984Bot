@@ -19,12 +19,13 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   pinging each location's subscribers. Anyone can `/weather add` a US place by
   name (geocoded automatically) and `/weather subscribe` to be pinged;
   `/weather list` shows who's watching what.
-- **SMITE 2 watch** — when a member starts playing SMITE 2, posts an embed with
-  whatever their Discord rich presence reveals (god, mode, live match) plus
-  links to the matching [SmiteSource](https://smitesource.com) pages — the god's
-  build guide, the live match page when detectable, and the member's tracker
-  profile if they've linked it with `/smite link`. Discord unfurls the
-  SmiteSource link into its own preview card. `SMITE_WATCH=false` turns it off.
+- **SMITE 2 watch** — when a member starts playing SMITE 2, posts a stat card
+  (rank + MMR, ranked win rate and record, recent form, top gods) built from
+  their linked [smite2.live](https://smite2.live) profile, plus their
+  [SmiteSource](https://smitesource.com) profile link. When a linked member's
+  match finishes, a match report follows: every guild member in that match with
+  their god, role, KDA, performance grade, and result. Members link themselves
+  once with `/smite link <in-game name>`. `SMITE_WATCH=false` turns it off.
 
 Designed to run passively on a Raspberry Pi with a single SQLite file for storage.
 
@@ -219,9 +220,10 @@ via Resend.
 - `/tagleaderboard [period]` — most-tagged people, biggest taggers, closest pairs
 
 **SMITE:**
-- `/smite link profile:<url> [user]` — link a SmiteSource tracker profile
-  (search yourself at [smitesource.com/tracker](https://smitesource.com/tracker),
-  open your profile, paste the `smitesource.com/player/...` URL)
+- `/smite link profile:<name-or-url> [user]` — link your SMITE 2 identity.
+  An exact in-game name (or `smite2.live/profile/...` URL) links smite2.live
+  stats; a `smitesource.com/player/...` URL additionally links SmiteSource.
+- `/smite stats [user]` — the stat card on demand
 - `/smite unlink [user]` · `/smite list`
 
 `period` is one of `day` / `week` / `month` / `year` / `all` (default `week`).

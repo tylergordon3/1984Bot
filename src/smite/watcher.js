@@ -5,9 +5,10 @@ import { rememberUser, logName } from '../db/database.js';
 import { MINUTE } from '../util/time.js';
 import { findTextChannel } from '../util/channels.js';
 import { findGodIn, godDisplayName, godPageUrl } from './gods.js';
-import { extractPlayerUuid, playerUuid, playerPageUrl, matchPageUrl } from './store.js';
+import { extractPlayerUuid, getPlayer, matchPageUrl } from './store.js';
+import { fetchStatCard } from './smite2live.js';
+import { SMITE_EMBED_COLOR, addStatFields, profileLinks } from './embeds.js';
 
-const EMBED_COLOR = 0xc9a227; // SMITE gold
 // A relaunch (crash, queue-dodge restart) inside this window doesn't re-announce.
 const RELAUNCH_COOLDOWN = 30 * MINUTE;
 
@@ -38,22 +39,18 @@ function presenceFields(activity) {
   };
 }
 
-function buildEmbed(member, activity, { god, matchId }) {
+function buildEmbed(member, activity, { god, matchId }, player, card) {
   const f = presenceFields(activity);
-  const profileUuid = playerUuid(member.id);
-  // SMITE 2 sets no rich-presence details (observed live: every field null),
-  // so when there's no status line the tracker profile is the route to the
-  // match they're in.
   const statusLine = [f.details, f.state].filter(Boolean).join(' — ');
-  const fallback = profileUuid
-    ? 'Their live match shows up on their SmiteSource profile below.'
-    : '_No linked SmiteSource profile — `/smite link` adds their live match tracker._';
+  const fallback = player
+    ? null
+    : '_No linked profile — `/smite link` your in-game name to add your stats._';
   const embed = new EmbedBuilder()
-    .setColor(EMBED_COLOR)
+    .setColor(SMITE_EMBED_COLOR)
     .setTitle(`⚔️ ${member.displayName} is playing ${activity.name}`)
-    .setDescription(statusLine || fallback)
-    .setFooter({ text: 'SmiteSource' });
+    .setFooter({ text: card ? 'Stats: smite2.live' : 'SmiteSource' });
 
+  if (statusLine || fallback) embed.setDescription(statusLine || fallback);
   if (activity.timestamps?.start) embed.setTimestamp(activity.timestamps.start);
   if (god) {
     embed.addFields({
@@ -65,13 +62,9 @@ function buildEmbed(member, activity, { god, matchId }) {
   if (matchId) {
     embed.addFields({ name: 'Live match', value: matchPageUrl(matchId), inline: true });
   }
-  if (profileUuid) {
-    embed.addFields({
-      name: 'Profile',
-      value: `[SmiteSource tracker](${playerPageUrl(profileUuid)})`,
-      inline: true,
-    });
-  }
+  if (card) addStatFields(embed, card);
+  const links = profileLinks(player);
+  if (links) embed.addFields({ name: 'Profiles', value: links, inline: false });
   return embed;
 }
 
@@ -81,22 +74,22 @@ async function announce(guild, member, activity, info, reason) {
     logger.warn(`SMITE: channel "${config.smiteChannel}" not found in guild.`);
     return;
   }
-  // The best link goes in the message body bare, so Discord unfurls
-  // SmiteSource's own preview card (match beats god build beats profile).
-  const profile = playerUuid(member.id);
-  const bestUrl =
-    (info.matchId && matchPageUrl(info.matchId)) ||
-    (info.god && godPageUrl(info.god)) ||
-    (profile && playerPageUrl(profile)) ||
-    null;
+  const player = getPlayer(member.id);
+  const card =
+    player?.s2l_platform && player?.s2l_id
+      ? await fetchStatCard(player.s2l_platform, player.s2l_id)
+      : null;
 
   await channel.send({
-    content: bestUrl || undefined,
-    embeds: [buildEmbed(member, activity, info)],
+    // The best SmiteSource link goes in the body bare, so Discord unfurls
+    // the site's own preview card on top of our stats embed.
+    content: (info.matchId && matchPageUrl(info.matchId)) || (info.god && godPageUrl(info.god)) || undefined,
+    embeds: [buildEmbed(member, activity, info, player, card)],
   });
   logger.info(
     `👁️ SMITE post (${reason}): ${logName(member.id)}` +
-      `${info.god ? ` as ${godDisplayName(info.god)}` : ''}${info.matchId ? ` match ${info.matchId}` : ''}`
+      `${info.god ? ` as ${godDisplayName(info.god)}` : ''}${info.matchId ? ` match ${info.matchId}` : ''}` +
+      `${card ? ' +stats' : ''}`
   );
 }
 

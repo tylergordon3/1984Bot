@@ -20,6 +20,7 @@ import { handleBotMention } from './messages/responder.js';
 import { destroyAllPlayers } from './music/player.js';
 import { startWeatherWatcher } from './weather/alerts.js';
 import { handleSmitePresence, seedSmiteSessions } from './smite/watcher.js';
+import { startSmiteReporter } from './smite/reports.js';
 
 initDatabase();
 
@@ -59,6 +60,7 @@ client.once(Events.ClientReady, async (c) => {
   if (config.smiteWatch) seedSmiteSessions(guild);
   stopHeartbeats.push(startVoiceHeartbeat(client), startGameHeartbeat(client));
   stopHeartbeats.push(startWeatherWatcher(client));
+  if (config.smiteWatch) stopHeartbeats.push(startSmiteReporter(client));
   await catchUpMessages(guild).catch((err) => logger.warn(`Message catch-up failed: ${err.message}`));
   logger.info('1984Bot is watching. 👁️');
 });

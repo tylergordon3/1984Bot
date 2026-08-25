@@ -118,12 +118,20 @@ CREATE TABLE IF NOT EXISTS weather_subscribers (
   PRIMARY KEY (location_name, user_id)
 );
 
--- Discord user → SmiteSource player-page UUID, linked via /smite link, so
--- SMITE session announcements can point at the member's live profile.
+-- Discord user → SMITE identities, linked via /smite link. player_uuid is
+-- their smitesource.com profile (live-match click-through); the s2l_* columns
+-- are their smite2.live profile, which serves the actual stats (rank, win
+-- rates, top gods, per-match performance). last_match_id is the newest match
+-- already posted as a report, so the poller never reposts.
 CREATE TABLE IF NOT EXISTS smite_players (
-  user_id     TEXT PRIMARY KEY,
-  player_uuid TEXT NOT NULL,
-  linked_at   INTEGER NOT NULL
+  user_id        TEXT PRIMARY KEY,
+  player_uuid    TEXT,
+  s2l_platform   TEXT,
+  s2l_id         TEXT,
+  s2l_profile_id TEXT,
+  s2l_name       TEXT,
+  last_match_id  TEXT,
+  linked_at      INTEGER NOT NULL
 );
 
 -- Lightweight cache of display names so reports don't need live fetches.
@@ -157,6 +165,27 @@ export function initDatabase() {
   const weatherCols = db.pragma(`table_info(weather_alerts_sent)`).map((c) => c.name);
   if (weatherCols.length > 0 && !weatherCols.includes('location')) {
     db.exec('DROP TABLE weather_alerts_sent');
+  }
+  // The first smite_players build stored only a SmiteSource UUID (NOT NULL);
+  // widen to the smite2.live columns, carrying existing links over.
+  const smiteCols = db.pragma(`table_info(smite_players)`).map((c) => c.name);
+  if (smiteCols.length > 0 && !smiteCols.includes('s2l_platform')) {
+    db.exec(`
+      ALTER TABLE smite_players RENAME TO smite_players_old;
+      CREATE TABLE smite_players (
+        user_id        TEXT PRIMARY KEY,
+        player_uuid    TEXT,
+        s2l_platform   TEXT,
+        s2l_id         TEXT,
+        s2l_profile_id TEXT,
+        s2l_name       TEXT,
+        last_match_id  TEXT,
+        linked_at      INTEGER NOT NULL
+      );
+      INSERT INTO smite_players (user_id, player_uuid, linked_at)
+        SELECT user_id, player_uuid, linked_at FROM smite_players_old;
+      DROP TABLE smite_players_old;
+    `);
   }
   db.exec(SCHEMA);
   logger.info(`Database ready at ${dbPath}`);
