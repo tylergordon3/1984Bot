@@ -1,36 +1,47 @@
 import { logger } from '../util/logger.js';
 import { HOUR } from '../util/time.js';
 import { resolveProfile, fetchOverview } from './smite2live.js';
-import { linkSmite2Live, getPlayer } from './store.js';
+import { addAccount, accountsFor, pendingAccounts, resolvedAccounts } from './store.js';
 
 // Failed lookups aren't retried for a while — smite2.live search is
-// exact-match, so a Discord name that missed once will keep missing.
+// exact-match over its own index, so a miss will usually keep missing
+// until the site ingests the player.
 const RETRY_AFTER = 24 * HOUR;
 const attempted = new Map(); // userId -> ts
 
+async function resolveName(name) {
+  const resolved = await resolveProfile(name).catch(() => null);
+  if (!resolved) return null;
+  const overview = await fetchOverview(resolved.platform, resolved.id).catch(() => null);
+  return { ...resolved, profileId: overview?.profileId ?? null, name: overview?.name ?? name };
+}
+
 /**
- * Try to find a member's smite2.live profile by their Discord names
- * (nickname, global name, username). On a hit the profile is linked as if
- * they ran /smite link themselves. Returns the stored row, or null.
+ * Retry a member's pending accounts against smite2.live, and — when they have
+ * no accounts at all — guess from their Discord names, linking any hit.
+ * Returns the member's resolved accounts afterwards.
  */
-export async function autoLinkSmite2Live(userId, names, { force = false } = {}) {
-  if (!force && Date.now() - (attempted.get(userId) || 0) < RETRY_AFTER) return null;
-  attempted.set(userId, Date.now());
-  // A stored pending in-game name (from /smite link before smite2.live
-  // tracked the player) beats guesses from Discord names.
-  const pending = getPlayer(userId)?.s2l_name;
-  for (const name of [...new Set([pending, ...names].filter(Boolean))]) {
-    const resolved = await resolveProfile(name).catch(() => null);
-    if (!resolved) continue;
-    const overview = await fetchOverview(resolved.platform, resolved.id).catch(() => null);
-    linkSmite2Live(userId, {
-      platform: resolved.platform,
-      id: resolved.id,
-      profileId: overview?.profileId ?? null,
-      name: overview?.name ?? null,
-    });
-    logger.info(`SMITE auto-link: ${userId} → ${overview?.name || name} (${resolved.platform})`);
-    return getPlayer(userId);
+export async function autoResolveAccounts(userId, discordNames = [], { force = false } = {}) {
+  if (!force && Date.now() - (attempted.get(userId) || 0) < RETRY_AFTER) {
+    return resolvedAccounts(userId);
   }
-  return null;
+  attempted.set(userId, Date.now());
+
+  for (const acct of pendingAccounts(userId)) {
+    const hit = await resolveName(acct.s2l_name);
+    if (!hit) continue;
+    addAccount(userId, { name: hit.name, platform: hit.platform, id: hit.id, profileId: hit.profileId });
+    logger.info(`SMITE account resolved: ${userId} → ${hit.name} (${hit.platform})`);
+  }
+
+  if (accountsFor(userId).length === 0) {
+    for (const name of [...new Set(discordNames.filter(Boolean))]) {
+      const hit = await resolveName(name);
+      if (!hit) continue;
+      addAccount(userId, { name: hit.name, platform: hit.platform, id: hit.id, profileId: hit.profileId });
+      logger.info(`SMITE auto-link: ${userId} → ${hit.name} (${hit.platform})`);
+      break;
+    }
+  }
+  return resolvedAccounts(userId);
 }

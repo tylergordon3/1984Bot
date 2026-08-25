@@ -4,7 +4,7 @@ import { getDb, logName } from '../db/database.js';
 import { logger } from '../util/logger.js';
 import { MINUTE } from '../util/time.js';
 import { findTextChannel } from '../util/channels.js';
-import { listStatPlayers, setLastMatch } from './store.js';
+import { listPollableAccounts, setAccountLastMatch } from './store.js';
 import { fetchLatestMatchIds, fetchPerformance } from './smite2live.js';
 import { SMITE_EMBED_COLOR, modeName, roleName } from './embeds.js';
 
@@ -13,8 +13,8 @@ const POLL_INTERVAL = 3 * MINUTE;
 // them, so keep polling a member for a while after they close the game.
 const LINGER = 20 * MINUTE;
 
-/** Linked members whose SMITE session is open or recently ended. */
-function pollablePlayers() {
+/** Resolved accounts of members whose SMITE session is open or recently ended. */
+function pollableAccounts() {
   const cutoff = Date.now() - LINGER;
   const active = new Set(
     getDb()
@@ -25,7 +25,7 @@ function pollablePlayers() {
       .all(cutoff)
       .map((r) => r.user_id)
   );
-  return listStatPlayers().filter((p) => active.has(p.user_id));
+  return listPollableAccounts().filter((a) => active.has(a.user_id));
 }
 
 /** percentile_rank is "better than X% of players" — phrase both halves sanely. */
@@ -52,15 +52,20 @@ function reportEmbed(matchId, entries) {
     .setFooter({ text: 'Stats: smite2.live · full match on tracker.gg' })
     .setTimestamp(new Date());
 
-  for (const { player, displayName, perf } of entries) {
+  for (const { account, displayName, perf } of entries) {
     const bits = [
       `**${perf.god_name || '?'}** (${roleName(perf.role)})`,
       kdaLine(perf),
       perf.grade && `${perf.grade}${percentileLabel(perf.percentile_rank)}`,
       perf.win_status ? '🏆 Victory' : '💀 Defeat',
     ].filter(Boolean);
+    // "GFreek (smurfname)" when the account name differs from who they are.
+    const alias =
+      account.s2l_name && displayName && account.s2l_name.toLowerCase() !== displayName.toLowerCase()
+        ? ` (${account.s2l_name})`
+        : '';
     embed.addFields({
-      name: displayName || player.s2l_name || 'Unknown',
+      name: `${displayName || account.s2l_name || 'Unknown'}${alias}`,
       value: bits.join(' · '),
       inline: false,
     });
@@ -76,31 +81,30 @@ function reportEmbed(matchId, entries) {
 export async function pollSmiteReports(client) {
   const guild = client.guilds.cache.get(config.guildId);
   if (!guild) return;
-  const players = pollablePlayers();
-  if (players.length === 0) return;
+  const accounts = pollableAccounts();
+  if (accounts.length === 0) return;
 
-  // matchId → [{player, displayName, perf}] so a party's shared match posts once.
+  // matchId → [{account, displayName, perf}] so a party's shared match posts once.
   const byMatch = new Map();
 
-  for (const player of players) {
+  for (const account of accounts) {
     try {
-      const ids = await fetchLatestMatchIds(player.s2l_platform, player.s2l_id, 1);
+      const ids = await fetchLatestMatchIds(account.s2l_platform, account.s2l_id, 1);
       const newest = ids[0];
       if (!newest) continue;
-      if (!player.last_match_id) {
+      if (!account.last_match_id) {
         // First sighting: remember where "new" starts, don't report history.
-        setLastMatch(player.user_id, newest);
+        setAccountLastMatch(account.account_id, newest);
         continue;
       }
-      if (newest === player.last_match_id) continue;
-      setLastMatch(player.user_id, newest);
-      if (!player.s2l_profile_id) continue;
-      const perf = await fetchPerformance(newest, player.s2l_profile_id);
-      const member = await guild.members.fetch(player.user_id).catch(() => null);
+      if (newest === account.last_match_id) continue;
+      setAccountLastMatch(account.account_id, newest);
+      const perf = await fetchPerformance(newest, account.s2l_profile_id);
+      const member = await guild.members.fetch(account.user_id).catch(() => null);
       if (!byMatch.has(newest)) byMatch.set(newest, []);
-      byMatch.get(newest).push({ player, displayName: member?.displayName, perf });
+      byMatch.get(newest).push({ account, displayName: member?.displayName, perf });
     } catch (err) {
-      logger.warn(`SMITE report poll failed for ${logName(player.user_id)}: ${err.message}`);
+      logger.warn(`SMITE report poll failed for ${logName(account.user_id)}: ${err.message}`);
     }
   }
 
@@ -110,7 +114,7 @@ export async function pollSmiteReports(client) {
   for (const [matchId, entries] of byMatch) {
     await channel.send({ embeds: [reportEmbed(matchId, entries)] });
     logger.info(
-      `👁️ SMITE match report: ${entries.map((e) => logName(e.player.user_id)).join(', ')} → ${matchId}`
+      `👁️ SMITE match report: ${entries.map((e) => logName(e.account.user_id)).join(', ')} → ${matchId}`
     );
   }
 }

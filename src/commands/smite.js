@@ -3,16 +3,19 @@ import { rememberUser, displayName } from '../db/database.js';
 import {
   extractPlayerUuid,
   linkSmiteSource,
-  linkSmite2Live,
-  setPendingName,
+  addAccount,
+  removeAccount,
   unlinkPlayer,
   getPlayer,
+  accountsFor,
+  resolvedAccounts,
+  pendingAccounts,
   playerPageUrl,
-  listLinkedPlayers,
+  listLinkedUsers,
 } from '../smite/store.js';
 import { resolveProfile, fetchOverview, fetchStatCard, profileUrl } from '../smite/smite2live.js';
-import { autoLinkSmite2Live } from '../smite/autolink.js';
-import { SMITE_EMBED_COLOR, statCardEmbed } from '../smite/embeds.js';
+import { autoResolveAccounts } from '../smite/autolink.js';
+import { SMITE_EMBED_COLOR, statCardEmbed, profileLinks } from '../smite/embeds.js';
 
 const smite = {
   data: new SlashCommandBuilder()
@@ -21,7 +24,7 @@ const smite = {
     .addSubcommand((sub) =>
       sub
         .setName('link')
-        .setDescription('Link your SMITE 2 identity for stats and match reports')
+        .setDescription('Link a SMITE 2 account (members can have several)')
         .addStringOption((o) =>
           o
             .setName('profile')
@@ -35,7 +38,7 @@ const smite = {
     .addSubcommand((sub) =>
       sub
         .setName('stats')
-        .setDescription('Show a SMITE 2 stat card for a member or any player name')
+        .setDescription('Show SMITE 2 stat cards for a member or any player name')
         .addUserOption((o) =>
           o.setName('user').setDescription('Whose stats (defaults to you)')
         )
@@ -46,9 +49,12 @@ const smite = {
     .addSubcommand((sub) =>
       sub
         .setName('unlink')
-        .setDescription('Remove a linked SMITE profile')
+        .setDescription('Remove one linked account, or everything')
         .addUserOption((o) =>
           o.setName('user').setDescription('Unlink someone else (defaults to you)')
+        )
+        .addStringOption((o) =>
+          o.setName('name').setDescription('In-game name of one account to remove (default: everything)')
         )
     )
     .addSubcommand((sub) =>
@@ -71,7 +77,7 @@ async function execLink(interaction) {
   rememberUser(target.id, target.username);
 
   // A SmiteSource URL (or bare dashed UUID) links the SmiteSource profile;
-  // anything else — an in-game name or smite2.live URL — links smite2.live.
+  // anything else — an in-game name or smite2.live URL — adds an account.
   const smitesourceUuid =
     /smitesource\.com/.test(query) || /^[0-9a-f-]{36}$/i.test(query)
       ? extractPlayerUuid(query)
@@ -80,7 +86,7 @@ async function execLink(interaction) {
     linkSmiteSource(target.id, smitesourceUuid);
     return interaction.reply(
       `👁️ ${who} → SmiteSource profile linked: <${playerPageUrl(smitesourceUuid)}>. ` +
-        'Also `/smite link` your in-game name to add smite2.live stats.'
+        'Also `/smite link` in-game names to add smite2.live stats.'
     );
   }
 
@@ -89,23 +95,25 @@ async function execLink(interaction) {
   if (!resolved) {
     // smite2.live only indexes players it has already seen in matches, so a
     // real name can still miss. Keep it and retry until the site catches up.
-    setPendingName(target.id, query);
+    addAccount(target.id, { name: query });
     return interaction.editReply(
-      `👁️ Saved **${query}** for ${who.toLowerCase() === 'you' ? 'you' : who}. smite2.live doesn't ` +
+      `👁️ Saved account **${query}** for ${who === 'You' ? 'you' : who}. smite2.live doesn't ` +
         "track this player yet (it only knows players it has seen in matches) — I'll keep " +
         'checking and stats will appear automatically once they do.'
     );
   }
   const overview = await fetchOverview(resolved.platform, resolved.id).catch(() => null);
-  linkSmite2Live(target.id, {
+  addAccount(target.id, {
+    name: overview?.name ?? query,
     platform: resolved.platform,
     id: resolved.id,
     profileId: overview?.profileId ?? null,
-    name: overview?.name ?? null,
   });
+  const count = accountsFor(target.id).length;
   return interaction.editReply(
-    `👁️ ${who} → linked to **${overview?.name || query}** ` +
-      `(<${profileUrl(resolved.platform, resolved.id)}>). Session posts now carry ` +
+    `👁️ ${who} → linked account **${overview?.name || query}** ` +
+      `(<${profileUrl(resolved.platform, resolved.id)}>)` +
+      `${count > 1 ? ` — that's ${count} accounts now` : ''}. Session posts carry ` +
       'rank, win rates, and top gods — and finished matches get a report here.'
   );
 }
@@ -127,77 +135,97 @@ async function execStats(interaction) {
       return interaction.editReply('smite2.live is not answering right now — try again in a bit.');
     }
     return interaction.editReply({
-      embeds: [statCardEmbed(name, card, { s2l_platform: resolved.platform, s2l_id: resolved.id })],
+      embeds: [statCardEmbed(name, card, `[smite2.live](${profileUrl(resolved.platform, resolved.id)})`)],
     });
   }
 
   const target = interaction.options.getUser('user') || interaction.user;
-  let player = getPlayer(target.id);
-  let autoLinked = false;
-  if (!player?.s2l_platform) {
-    // No link yet — try their Discord names before giving up.
-    const member = await interaction.guild?.members.fetch(target.id).catch(() => null);
-    player = await autoLinkSmite2Live(
-      target.id,
-      [member?.nickname, target.globalName, target.username],
-      { force: true }
-    );
-    autoLinked = !!player;
-  }
-  if (!player?.s2l_platform) {
-    const pending = getPlayer(target.id)?.s2l_name;
+  const before = resolvedAccounts(target.id).length;
+  const member = await interaction.guild?.members.fetch(target.id).catch(() => null);
+  const accounts = await autoResolveAccounts(
+    target.id,
+    [member?.nickname, target.globalName, target.username],
+    { force: true }
+  ).catch(() => resolvedAccounts(target.id));
+
+  if (accounts.length === 0) {
+    const pending = pendingAccounts(target.id).map((a) => `**${a.s2l_name}**`);
     return interaction.editReply(
-      pending
-        ? `smite2.live still doesn't track **${pending}** — stats appear once they've been ` +
-            'seen in a tracked match. No action needed; I keep checking.'
+      pending.length
+        ? `smite2.live still doesn't track ${pending.join(' / ')} — stats appear once they've ` +
+            'been seen in a tracked match. No action needed; I keep checking.'
         : `Couldn't find <@${target.id}> on smite2.live — none of their Discord names match an ` +
             'in-game name. They can `/smite link` their exact SMITE 2 name (or you can run ' +
             '`/smite link profile:<name> user:@them`), or use `/smite stats name:<in-game name>` ' +
             'for a one-off lookup.'
     );
   }
-  const card = await fetchStatCard(player.s2l_platform, player.s2l_id);
-  if (!card) {
+
+  const player = getPlayer(target.id);
+  const shown = accounts.slice(0, 4);
+  const embeds = [];
+  for (const account of shown) {
+    const card = await fetchStatCard(account.s2l_platform, account.s2l_id);
+    if (card) {
+      embeds.push(
+        statCardEmbed(member?.displayName || displayName(target.id), card, profileLinks(player, [account]))
+      );
+    }
+  }
+  if (embeds.length === 0) {
     return interaction.editReply('smite2.live is not answering right now — try again in a bit.');
   }
+  const newlyLinked = accounts.length > before && before === 0;
   return interaction.editReply({
-    content: autoLinked
-      ? `🔗 Auto-matched to **${player.s2l_name || '?'}** by Discord name and linked — \`/smite unlink\` if that's not them.`
+    content: newlyLinked
+      ? `🔗 Auto-matched to **${accounts[0].s2l_name || '?'}** by Discord name and linked — \`/smite unlink\` if that's not them.`
       : undefined,
-    embeds: [statCardEmbed(await memberName(interaction.guild, target.id), card, player)],
+    embeds,
   });
 }
 
 async function execUnlink(interaction) {
   const target = interaction.options.getUser('user') || interaction.user;
-  const removed = unlinkPlayer(target.id);
+  const name = interaction.options.getString('name')?.trim();
   const who = target.id === interaction.user.id ? 'You' : `<@${target.id}>`;
+  if (name) {
+    const removed = removeAccount(target.id, name);
+    return interaction.reply(
+      removed
+        ? `🗑️ ${who} → account **${name}** removed.`
+        : `${who} ${target.id === interaction.user.id ? "don't" : "doesn't"} have an account named **${name}**.`
+    );
+  }
+  const removed = unlinkPlayer(target.id);
   return interaction.reply(
     removed
-      ? `🗑️ ${who} → SMITE profile unlinked.`
-      : `${who} ${target.id === interaction.user.id ? "don't" : "doesn't"} have a linked profile.`
+      ? `🗑️ ${who} → all SMITE links removed.`
+      : `${who} ${target.id === interaction.user.id ? "don't" : "doesn't"} have anything linked.`
   );
 }
 
 async function execList(interaction) {
-  const rows = listLinkedPlayers();
+  const userIds = listLinkedUsers();
   const embed = new EmbedBuilder().setColor(SMITE_EMBED_COLOR).setTitle('⚔️ Linked SMITE profiles');
-  if (rows.length === 0) {
+  if (userIds.length === 0) {
     embed.setDescription('_Nobody has linked a profile yet — `/smite link` your in-game name._');
     return interaction.reply({ embeds: [embed] });
   }
   embed.setDescription(
     (
       await Promise.all(
-        rows.map(async (r) => {
-          const links = [];
-          if (r.s2l_platform && r.s2l_id) {
-            links.push(`[${r.s2l_name || 'smite2.live'}](${profileUrl(r.s2l_platform, r.s2l_id)})`);
-          } else if (r.s2l_name) {
-            links.push(`⏳ ${r.s2l_name} (awaiting smite2.live tracking)`);
+        userIds.map(async (userId) => {
+          const player = getPlayer(userId);
+          const parts = [];
+          for (const a of accountsFor(userId)) {
+            if (a.s2l_platform && a.s2l_id) {
+              parts.push(`[${a.s2l_name || 'smite2.live'}](${profileUrl(a.s2l_platform, a.s2l_id)})`);
+            } else if (a.s2l_name) {
+              parts.push(`⏳ ${a.s2l_name}`);
+            }
           }
-          if (r.player_uuid) links.push(`[SmiteSource](${playerPageUrl(r.player_uuid)})`);
-          return `${await memberName(interaction.guild, r.user_id)} — ${links.join(' · ') || '_nothing linked_'}`;
+          if (player?.player_uuid) parts.push(`[SmiteSource](${playerPageUrl(player.player_uuid)})`);
+          return `${await memberName(interaction.guild, userId)} — ${parts.join(' · ') || '_nothing linked_'}`;
         })
       )
     ).join('\n')

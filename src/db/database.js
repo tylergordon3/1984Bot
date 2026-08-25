@@ -118,11 +118,9 @@ CREATE TABLE IF NOT EXISTS weather_subscribers (
   PRIMARY KEY (location_name, user_id)
 );
 
--- Discord user → SMITE identities, linked via /smite link. player_uuid is
--- their smitesource.com profile (live-match click-through); the s2l_* columns
--- are their smite2.live profile, which serves the actual stats (rank, win
--- rates, top gods, per-match performance). last_match_id is the newest match
--- already posted as a report, so the poller never reposts.
+-- Discord user → smitesource.com profile (live-match click-through), linked
+-- via /smite link. The s2l_* columns are legacy (single smite2.live identity)
+-- superseded by smite_accounts below; they stay so old rows migrate cleanly.
 CREATE TABLE IF NOT EXISTS smite_players (
   user_id        TEXT PRIMARY KEY,
   player_uuid    TEXT,
@@ -133,6 +131,21 @@ CREATE TABLE IF NOT EXISTS smite_players (
   last_match_id  TEXT,
   linked_at      INTEGER NOT NULL
 );
+
+-- A member's SMITE 2 accounts (players often have several). Each row is one
+-- in-game identity: pending while only the name is known, resolved once
+-- smite2.live tracks it (platform/id/profile_id filled in). last_match_id is
+-- the newest match already posted as a report for that account.
+CREATE TABLE IF NOT EXISTS smite_accounts (
+  user_id        TEXT NOT NULL,
+  s2l_name       TEXT,
+  s2l_platform   TEXT,
+  s2l_id         TEXT,
+  s2l_profile_id TEXT,
+  last_match_id  TEXT,
+  linked_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_smite_acct_user ON smite_accounts (user_id);
 
 -- Lightweight cache of display names so reports don't need live fetches.
 CREATE TABLE IF NOT EXISTS users (
@@ -188,6 +201,17 @@ export function initDatabase() {
     `);
   }
   db.exec(SCHEMA);
+  // One-time move of single-identity smite2.live links into smite_accounts.
+  const acctCount = db.prepare('SELECT COUNT(*) AS n FROM smite_accounts').get().n;
+  if (acctCount === 0) {
+    db.exec(`
+      INSERT INTO smite_accounts (user_id, s2l_name, s2l_platform, s2l_id, s2l_profile_id, last_match_id, linked_at)
+        SELECT user_id, s2l_name, s2l_platform, s2l_id, s2l_profile_id, last_match_id, linked_at
+        FROM smite_players WHERE s2l_name IS NOT NULL OR s2l_id IS NOT NULL;
+      UPDATE smite_players SET s2l_name = NULL, s2l_platform = NULL, s2l_id = NULL,
+        s2l_profile_id = NULL, last_match_id = NULL;
+    `);
+  }
   logger.info(`Database ready at ${dbPath}`);
   return db;
 }

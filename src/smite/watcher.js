@@ -5,10 +5,10 @@ import { rememberUser, logName } from '../db/database.js';
 import { MINUTE } from '../util/time.js';
 import { findTextChannel } from '../util/channels.js';
 import { findGodIn, godDisplayName, godPageUrl } from './gods.js';
-import { extractPlayerUuid, getPlayer, matchPageUrl } from './store.js';
+import { extractPlayerUuid, getPlayer, resolvedAccounts, matchPageUrl } from './store.js';
 import { fetchStatCard } from './smite2live.js';
-import { autoLinkSmite2Live } from './autolink.js';
-import { SMITE_EMBED_COLOR, addStatFields, profileLinks } from './embeds.js';
+import { autoResolveAccounts } from './autolink.js';
+import { SMITE_EMBED_COLOR, addStatFields, profileLinks, statCardEmbed } from './embeds.js';
 
 // A relaunch (crash, queue-dodge restart) inside this window doesn't re-announce.
 const RELAUNCH_COOLDOWN = 30 * MINUTE;
@@ -40,16 +40,17 @@ function presenceFields(activity) {
   };
 }
 
-function buildEmbed(member, activity, { god, matchId }, player, card) {
+function buildEmbed(member, activity, { god, matchId }, player, accounts, mainCard) {
   const f = presenceFields(activity);
   const statusLine = [f.details, f.state].filter(Boolean).join(' — ');
-  const fallback = player
-    ? null
-    : '_No linked profile — `/smite link` your in-game name to add your stats._';
+  const fallback =
+    player || accounts.length > 0
+      ? null
+      : '_No linked profile — `/smite link` your in-game name to add your stats._';
   const embed = new EmbedBuilder()
     .setColor(SMITE_EMBED_COLOR)
     .setTitle(`⚔️ ${member.displayName} is playing ${activity.name}`)
-    .setFooter({ text: card ? 'Stats: smite2.live' : 'SmiteSource' });
+    .setFooter({ text: mainCard ? 'Stats: smite2.live' : 'SmiteSource' });
 
   if (statusLine || fallback) embed.setDescription(statusLine || fallback);
   if (activity.timestamps?.start) embed.setTimestamp(activity.timestamps.start);
@@ -63,8 +64,8 @@ function buildEmbed(member, activity, { god, matchId }, player, card) {
   if (matchId) {
     embed.addFields({ name: 'Live match', value: matchPageUrl(matchId), inline: true });
   }
-  if (card) addStatFields(embed, card);
-  const links = profileLinks(player);
+  if (mainCard) addStatFields(embed, mainCard);
+  const links = profileLinks(player, accounts);
   if (links) embed.addFields({ name: 'Profiles', value: links, inline: false });
   return embed;
 }
@@ -75,31 +76,41 @@ async function announce(guild, member, activity, info, reason) {
     logger.warn(`SMITE: channel "${config.smiteChannel}" not found in guild.`);
     return;
   }
-  let player = getPlayer(member.id);
-  if (!player?.s2l_platform) {
-    // Unlinked player: maybe one of their Discord names IS their in-game name.
-    player =
-      (await autoLinkSmite2Live(member.id, [
-        member.nickname,
-        member.user?.globalName,
-        member.user?.username,
-      ]).catch(() => null)) || player;
+  const player = getPlayer(member.id);
+  let accounts = resolvedAccounts(member.id);
+  if (accounts.length === 0) {
+    accounts = await autoResolveAccounts(member.id, [
+      member.nickname,
+      member.user?.globalName,
+      member.user?.username,
+    ]).catch(() => []);
   }
-  const card =
-    player?.s2l_platform && player?.s2l_id
-      ? await fetchStatCard(player.s2l_platform, player.s2l_id)
-      : null;
+  // One stat card per account (capped): the first goes inline in the session
+  // embed, further accounts get their own card embeds below it.
+  const cards = (
+    await Promise.all(
+      accounts.slice(0, 3).map(async (a) => ({
+        account: a,
+        card: await fetchStatCard(a.s2l_platform, a.s2l_id),
+      }))
+    )
+  ).filter((c) => c.card);
+
+  const embeds = [buildEmbed(member, activity, info, player, accounts, cards[0]?.card)];
+  for (const { card } of cards.slice(1)) {
+    embeds.push(statCardEmbed(member.displayName, card));
+  }
 
   await channel.send({
     // The best SmiteSource link goes in the body bare, so Discord unfurls
     // the site's own preview card on top of our stats embed.
     content: (info.matchId && matchPageUrl(info.matchId)) || (info.god && godPageUrl(info.god)) || undefined,
-    embeds: [buildEmbed(member, activity, info, player, card)],
+    embeds,
   });
   logger.info(
     `👁️ SMITE post (${reason}): ${logName(member.id)}` +
       `${info.god ? ` as ${godDisplayName(info.god)}` : ''}${info.matchId ? ` match ${info.matchId}` : ''}` +
-      `${card ? ' +stats' : ''}`
+      `${cards.length ? ` +stats×${cards.length}` : ''}`
   );
 }
 

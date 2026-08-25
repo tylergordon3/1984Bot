@@ -75,26 +75,24 @@ export function addStatFields(embed, card) {
   }
 }
 
-/** Profile-links field: smite2.live tracker and/or SmiteSource. */
-export function profileLinks(player) {
-  const links = [];
-  if (player?.s2l_platform && player?.s2l_id) {
-    links.push(`[smite2.live](${profileUrl(player.s2l_platform, player.s2l_id)})`);
-  }
+/** Profile-links line: each smite2.live account and/or SmiteSource. */
+export function profileLinks(player, accounts = []) {
+  const links = accounts
+    .filter((a) => a.s2l_platform && a.s2l_id)
+    .map((a) => `[${a.s2l_name || 'smite2.live'}](${profileUrl(a.s2l_platform, a.s2l_id)})`);
   if (player?.player_uuid) {
     links.push(`[SmiteSource](${playerPageUrl(player.player_uuid)})`);
   }
   return links.join(' · ') || null;
 }
 
-/** Standalone stat card, for /smite stats. */
-export function statCardEmbed(displayName, card, player) {
+/** Standalone stat card for one account, for /smite stats. */
+export function statCardEmbed(displayName, card, links = null) {
   const embed = new EmbedBuilder()
     .setColor(SMITE_EMBED_COLOR)
     .setTitle(`⚔️ ${card.name || displayName} — SMITE 2`)
     .setFooter({ text: 'Stats: smite2.live' });
   addStatFields(embed, card);
-  const links = profileLinks(player);
   if (links) embed.addFields({ name: 'Profiles', value: links, inline: false });
   return embed;
 }
