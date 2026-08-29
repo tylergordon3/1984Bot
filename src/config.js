@@ -57,7 +57,10 @@ export const config = {
       };
     }),
   weatherChannel: (process.env.WEATHER_CHANNEL || 'gord-bot').replace(/^#/, '').toLowerCase(),
-  // NWS event names to post, lowercase for matching.
+  // NWS event names that trigger a notification, lowercase for matching.
+  // Warnings only by default — append "Severe Thunderstorm Watch,Tornado Watch"
+  // to WEATHER_EVENTS to be pinged for watches too. This gates the *pings*
+  // only: /weather map always draws every alert in effect, watches included.
   weatherEvents: new Set(
     (process.env.WEATHER_EVENTS || 'Severe Thunderstorm Warning,Tornado Warning')
       .split(',')
@@ -66,8 +69,17 @@ export const config = {
   ),
   // '', 'here', 'everyone', or a role id to ping with each alert.
   weatherMention: (process.env.WEATHER_MENTION || '').trim(),
-  // Announce SMITE 2 sessions (with SmiteSource links) as members start playing.
-  smiteWatch: process.env.SMITE_WATCH !== 'false',
+  // Attach a map of the alert area (NWS polygons over OpenStreetMap tiles) to
+  // each post. Set false to go back to text-only alerts.
+  weatherMaps: process.env.WEATHER_MAPS !== 'false',
+  // Overlay NEXRAD radar on those maps, so you see the storm and not just the
+  // county it was warned for. Outside radar coverage the map is drawn without it.
+  weatherRadar: process.env.WEATHER_RADAR !== 'false',
+  // Master switch for the whole SMITE utility: the /smite command, the session
+  // announcements and the match reports. Off unless explicitly enabled, so the
+  // feature can sit dormant in the tree without registering commands or polling
+  // smite2.live. Set SMITE_ENABLED=true to bring it back.
+  smiteEnabled: process.env.SMITE_ENABLED === 'true',
   // Channel (name or id) the SMITE session posts go to.
   smiteChannel: (process.env.SMITE_CHANNEL || 'gord-bot').replace(/^#/, '').toLowerCase(),
   databasePath: process.env.DATABASE_PATH || './data/1984bot.sqlite',

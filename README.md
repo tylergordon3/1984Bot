@@ -16,16 +16,27 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
 - **It answers when you @ it** — with something it actually knows about you.
 - **Severe weather alerts** — polls the National Weather Service and posts
   Severe Thunderstorm / Tornado Warnings for watched locations to a channel,
-  pinging each location's subscribers. Anyone can `/weather add` a US place by
-  name (geocoded automatically) and `/weather subscribe` to be pinged;
-  `/weather list` shows who's watching what.
+  pinging each location's subscribers (watches are off by default — add them to
+  `WEATHER_EVENTS`). Every alert comes with a **map**
+  of the warned area — live NEXRAD radar over OpenStreetMap, with the watched
+  location marked — so you can see at a glance whether the storm is over your
+  house or two counties away, and which way it's going. `WEATHER_RADAR=false`
+  drops back to the plain basemap; `WEATHER_MAPS=false` to text-only alerts. Anyone can `/weather add` a US place by name (geocoded
+  automatically) and `/weather subscribe` to be pinged; `/weather map` shows
+  everything in effect right now — watches included, whatever the ping settings
+  are — and `/weather list` shows who's watching what.
 - **SMITE 2 watch** — when a member starts playing SMITE 2, posts a stat card
   (rank + MMR, ranked win rate and record, recent form, top gods) built from
   their linked [smite2.live](https://smite2.live) profile, plus their
   [SmiteSource](https://smitesource.com) profile link. When a linked member's
   match finishes, a match report follows: every guild member in that match with
   their god, role, KDA, performance grade, and result. Members link themselves
-  once with `/smite link <in-game name>`. `SMITE_WATCH=false` turns it off.
+  once with `/smite link <in-game name>`.
+
+  **Currently switched off** — `SMITE_ENABLED` defaults to `false`, which hides
+  the `/smite` command and stops the session announcements and match reports.
+  The code and any linked accounts stay put; set `SMITE_ENABLED=true` and
+  re-run `npm run deploy` to bring it back.
 
 Designed to run passively on a Raspberry Pi with a single SQLite file for storage.
 
@@ -219,7 +230,16 @@ via Resend.
   and where the tagging is most one-sided
 - `/tagleaderboard [period]` — most-tagged people, biggest taggers, closest pairs
 
-**SMITE:**
+**Weather:**
+- `/weather map [place]` — a map of every watch and warning in effect right now
+  (all watched places if you don't name one)
+- `/weather add place:<US town or address> [lat] [lon]` — watch somewhere new
+- `/weather subscribe place:<place> [user]` · `/weather unsubscribe` — who gets
+  pinged
+- `/weather list` — every watched place and its subscribers
+- `/weather remove place:<place>` — stop watching somewhere entirely
+
+**SMITE** (off — see `SMITE_ENABLED`)**:**
 - `/smite link profile:<name-or-url> [user]` — link your SMITE 2 identity.
   An exact in-game name (or `smite2.live/profile/...` URL) links smite2.live
   stats; a `smitesource.com/player/...` URL additionally links SmiteSource.

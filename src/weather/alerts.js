@@ -1,21 +1,16 @@
-import { ChannelType, EmbedBuilder } from 'discord.js';
+import { AttachmentBuilder, ChannelType, EmbedBuilder } from 'discord.js';
 import { config } from '../config.js';
 import { getDb } from '../db/database.js';
 import { logger } from '../util/logger.js';
 import { MINUTE, DAY } from '../util/time.js';
 import { WEATHER_USER_AGENT } from './geocode.js';
+import { styleFor, rgbOf } from './events.js';
+import { ringsForAlert } from './geometry.js';
+import { renderMap, mapCredit } from './map.js';
 import { listLocations, addLocation, subscribe, subscriberIds } from './store.js';
 
 const POLL_INTERVAL = MINUTE;
 const PRUNE_AFTER = 7 * DAY;
-
-const EVENT_STYLE = {
-  'Tornado Warning': { emoji: '🌪️', color: 0xe74c3c },
-  'Tornado Watch': { emoji: '🌪️', color: 0xf1c40f },
-  'Severe Thunderstorm Warning': { emoji: '⛈️', color: 0xe67e22 },
-  'Severe Thunderstorm Watch': { emoji: '⛈️', color: 0xf1c40f },
-};
-const DEFAULT_STYLE = { emoji: '⚠️', color: 0x95a5a6 };
 
 function alreadySent(alertId, location) {
   return !!getDb()
@@ -82,13 +77,13 @@ function truncate(text, max) {
   return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
 }
 
-function buildEmbed(props, location) {
-  const style = EVENT_STYLE[props.event] || DEFAULT_STYLE;
+function buildEmbed(props, location, credit) {
+  const style = styleFor(props.event);
   const embed = new EmbedBuilder()
     .setColor(style.color)
     .setTitle(`${style.emoji} ${props.event} — ${location.name}`)
     .setDescription(truncate(props.headline || props.description, 500))
-    .setFooter({ text: `Source: NWS ${props.senderName || 'National Weather Service'}` })
+    .setFooter({ text: `Source: NWS ${props.senderName || 'National Weather Service'}${credit}` })
     .setTimestamp(new Date(props.sent || Date.now()));
 
   if (props.areaDesc) {
@@ -114,7 +109,29 @@ function globalMention() {
   return `<@&${m.replace(/[^0-9]/g, '')}>`;
 }
 
-async function fetchActiveAlerts(location) {
+/**
+ * The alert's area drawn over an OSM basemap, with the watched location
+ * marked. Best-effort: a map is a nicety, and no map must ever cost us the
+ * alert itself, so every failure here comes back as null.
+ */
+async function alertMapAttachment(feature, location, name = 'weather-map.png') {
+  if (!config.weatherMaps) return null;
+  try {
+    const rings = await ringsForAlert(feature);
+    const map = await renderMap({
+      layers: [{ rings, rgb: rgbOf(styleFor(feature.properties?.event).color) }],
+      marker: [Number(location.lon), Number(location.lat)],
+      radar: config.weatherRadar,
+    });
+    if (!map) return null;
+    return { file: new AttachmentBuilder(map.png, { name }), radar: map.radar };
+  } catch (err) {
+    logger.warn(`Weather map render failed: ${err.message}`);
+    return null;
+  }
+}
+
+export async function fetchActiveAlerts(location) {
   const url =
     `https://api.weather.gov/alerts/active` +
     `?point=${location.lat},${location.lon}&status=actual&message_type=alert,update`;
@@ -141,7 +158,12 @@ async function pollLocation(channel, location) {
     markSent(feature.id, location.name, props.event);
     const pings = subscriberIds(location.name).map((id) => `<@${id}>`);
     const content = [globalMention(), ...pings].filter(Boolean).join(' ') || undefined;
-    await channel.send({ content, embeds: [buildEmbed(props, location)] });
+    const map = await alertMapAttachment(feature, location);
+    await channel.send({
+      content,
+      embeds: [buildEmbed(props, location, mapCredit(map))],
+      files: map ? [map.file] : [],
+    });
     logger.info(`👁️ weather alert posted: ${props.event} @ ${location.name}`);
   }
 }

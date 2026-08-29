@@ -57,10 +57,10 @@ client.once(Events.ClientReady, async (c) => {
 
   reconcileVoice(guild);
   reconcileGames(guild);
-  if (config.smiteWatch) seedSmiteSessions(guild);
+  if (config.smiteEnabled) seedSmiteSessions(guild);
   stopHeartbeats.push(startVoiceHeartbeat(client), startGameHeartbeat(client));
   stopHeartbeats.push(startWeatherWatcher(client));
-  if (config.smiteWatch) stopHeartbeats.push(startSmiteReporter(client));
+  if (config.smiteEnabled) stopHeartbeats.push(startSmiteReporter(client));
   await catchUpMessages(guild).catch((err) => logger.warn(`Message catch-up failed: ${err.message}`));
   logger.info('1984Bot is watching. 👁️');
 });
@@ -85,7 +85,7 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 client.on(Events.PresenceUpdate, (oldPresence, newPresence) => {
   try {
     handlePresenceUpdate(oldPresence, newPresence);
-    if (config.smiteWatch) handleSmitePresence(oldPresence, newPresence);
+    if (config.smiteEnabled) handleSmitePresence(oldPresence, newPresence);
   } catch (err) {
     logger.error('presenceUpdate error:', err);
   }
