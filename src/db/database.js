@@ -160,6 +160,28 @@ CREATE TABLE IF NOT EXISTS channels (
   name       TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- Scheduled digests already posted, so a restart can't repeat the day's
+-- report. One row per edition, keyed "daily:2026-08-29" / "weekly:2026-08-30".
+CREATE TABLE IF NOT EXISTS digests_sent (
+  period_key TEXT PRIMARY KEY,
+  kind       TEXT NOT NULL,
+  sent_at    INTEGER NOT NULL
+);
+
+-- Milestones already announced. The key column is the identity of the
+-- achievement ("voice_hours:123:100"), so each is announced exactly once.
+-- Record rows ("record:voice_session") are the exception: they are updated
+-- in place and re-announced whenever the standing record is beaten.
+CREATE TABLE IF NOT EXISTS milestones_awarded (
+  key        TEXT PRIMARY KEY,
+  kind       TEXT NOT NULL,
+  user_id    TEXT,
+  detail     TEXT,
+  value      INTEGER,
+  awarded_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_milestone_time ON milestones_awarded (awarded_at);
 `;
 
 let db;

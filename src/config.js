@@ -11,6 +11,22 @@ function required(name) {
   return value;
 }
 
+/** Whole number from the environment, bounded to [min, max]. */
+function intInRange(name, fallback, min, max) {
+  const raw = (process.env[name] || '').trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`${name} must be a whole number between ${min} and ${max} (got "${raw}").`);
+  }
+  return n;
+}
+
+/** Channel name or id, normalised for case-insensitive matching. */
+function channelName(name, fallback) {
+  return (process.env[name] || fallback).trim().replace(/^#/, '').toLowerCase();
+}
+
 /** Comma-separated list of channel names and/or ids; empty means "every channel". */
 function channelList(name) {
   return (process.env[name] || '')
@@ -82,6 +98,21 @@ export const config = {
   smiteEnabled: process.env.SMITE_ENABLED === 'true',
   // Channel (name or id) the SMITE session posts go to.
   smiteChannel: (process.env.SMITE_CHANNEL || 'gord-bot').replace(/^#/, '').toLowerCase(),
+  // Scheduled digest: the Ministry's daily (and weekly) report, posted from
+  // the statistics already being collected. Fires at DIGEST_HOUR local time;
+  // a restart never replays an edition, and quiet periods post nothing.
+  digestEnabled: process.env.DIGEST_ENABLED !== 'false',
+  digestChannel: channelName('DIGEST_CHANNEL', 'gord-bot'),
+  digestHour: intInRange('DIGEST_HOUR', 9, 0, 23),
+  digestDaily: process.env.DIGEST_DAILY !== 'false',
+  digestWeekly: process.env.DIGEST_WEEKLY !== 'false',
+  // Weekday the weekly edition goes out on: 0 = Sunday … 6 = Saturday.
+  digestWeeklyDay: intInRange('DIGEST_WEEKLY_DAY', 0, 0, 6),
+  // Milestone announcements: thresholds crossed and records broken, posted as
+  // they happen. Everything already achieved is recorded silently on first
+  // run, so switching this on never dumps years of history into the channel.
+  milestonesEnabled: process.env.MILESTONES_ENABLED !== 'false',
+  milestoneChannel: channelName('MILESTONE_CHANNEL', process.env.DIGEST_CHANNEL || 'gord-bot'),
   databasePath: process.env.DATABASE_PATH || './data/1984bot.sqlite',
   logLevel: process.env.LOG_LEVEL || 'info',
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',

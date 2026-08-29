@@ -14,6 +14,21 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   of day, e.g. *only after 2pm*), when each person is most active, and a full
   tag graph: who tags whom, who gets tagged most, and who never tags back.
 - **It answers when you @ it** — with something it actually knows about you.
+- **The Ministry's report** — a daily digest posted on a schedule (and a weekly
+  one), assembled from everything above: the loudest talkers, who logged the
+  most voice time, the top games, who was inseparable from whom, who spent the
+  longest alone in a channel, who got tagged most, and a heatmap of when the
+  day was busiest. `/digest` renders one for any period on demand. A dead
+  period posts nothing, and a restart never replays an edition.
+- **Milestones** — announcements as they're earned: round numbers crossed
+  (100 hours in voice, 1,000 messages on the record, 250 hours in a single
+  game, 100 hours spent *alone*, 100 hours spent with the same person) and
+  server records broken (longest voice session, longest unbroken game session,
+  most messages in a day), plus a *first sighting* the first time anyone plays
+  a game the server has never recorded. `/records` shows the standing records
+  and what was most recently filed. Switching the feature on takes a silent
+  baseline of everything already achieved, so history is never dumped into the
+  channel — only what happens next is announced.
 - **Severe weather alerts** — polls the National Weather Service and posts
   Severe Thunderstorm / Tornado Warnings for watched locations to a channel,
   pinging each location's subscribers (watches are off by default — add them to
@@ -200,6 +215,12 @@ Both are `Persistent=true`, so a run missed while the Pi was off happens at next
 boot. Any unit that fails triggers `notify@`, which emails the last 40 log lines
 via Resend.
 
+The bot also schedules work of its own, inside the process rather than as
+systemd units: severe weather is polled every minute, milestones are swept
+every five minutes (the pairwise checks hourly), and the digest goes out at
+`DIGEST_HOUR`. None of them replay after a restart — posted alerts, sent
+editions and awarded milestones are all recorded in the database.
+
 ---
 
 ## Commands
@@ -229,6 +250,11 @@ via Resend.
 - `/tagstats [user] [period]` — who tags this person the most, who they tag back,
   and where the tagging is most one-sided
 - `/tagleaderboard [period]` — most-tagged people, biggest taggers, closest pairs
+
+**Reports:**
+- `/digest [period]` — the Ministry's report for a period, the same one posted
+  on a schedule
+- `/records` — standing records and the milestones most recently filed
 
 **Weather:**
 - `/weather map [place]` — a map of every watch and warning in effect right now
