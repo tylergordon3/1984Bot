@@ -2,16 +2,18 @@
 // rather than hooking every tracker, so an achievement crossed while the bot
 // was down is still caught, and open sessions count toward totals.
 //
-// The first sweep after this feature is switched on takes a *baseline*: every
-// milestone already true is written down silently. Only what happens next is
-// announced — switching it on never dumps years of history into the channel.
+// The first sweep that sees a kind of milestone takes a *baseline*: every
+// instance already true is written down silently, and only what happens after
+// that is announced. Baselines are per scope rather than one global flag, so a
+// check added in a later release baselines itself on deploy instead of
+// announcing every member's back catalogue at once.
 import { EmbedBuilder } from 'discord.js';
 import { config } from '../config.js';
 import { logger } from '../util/logger.js';
 import { MINUTE } from '../util/time.js';
 import { findTextChannel } from '../util/channels.js';
-import { currentAwards } from './checks.js';
-import { isSeeded, markSeeded, hasAward, awardValue, record } from './store.js';
+import { currentAwards, AWARD_SCOPES, scopeOf } from './checks.js';
+import { isScopeSeeded, markScopeSeeded, hasAward, awardValue, record } from './store.js';
 
 const SWEEP_INTERVAL = 5 * MINUTE;
 // The interval-sweep checks (alone time, pair time) are much heavier than the
@@ -60,17 +62,34 @@ function store(award, { baseline = false } = {}) {
   });
 }
 
-/** Write down everything already achieved, announcing none of it. */
-function seed() {
-  const awards = currentAwards({ seeding: true });
-  for (const award of awards) store(award, { baseline: true });
-  markSeeded();
-  logger.info(`Milestones: baseline taken — ${awards.length} already-earned milestone(s) recorded.`);
+/**
+ * Write down everything already true of scopes we've never baselined,
+ * announcing none of it. Runs on first boot for every scope, and again for
+ * just the new ones whenever a release adds a check — otherwise the day a
+ * check ships, every member's entire history arrives at once as "news".
+ *
+ * Existing rows are left alone: a scope being re-baselined must never reset
+ * the timestamps of milestones that were genuinely announced.
+ */
+function seedScopes(pending) {
+  let recorded = 0;
+  for (const award of currentAwards({ deep: true, seeding: true })) {
+    if (!pending.has(scopeOf(award)) || hasAward(award.key)) continue;
+    store(award, { baseline: true });
+    recorded++;
+  }
+  for (const scope of pending) markScopeSeeded(scope);
+  logger.info(
+    `Milestones: baseline taken for ${pending.size} scope(s) ` +
+      `[${[...pending].join(', ')}] — ${recorded} already-earned milestone(s) recorded.`
+  );
 }
 
 async function sweep(client, deep) {
-  if (!isSeeded()) {
-    seed();
+  const pending = new Set(AWARD_SCOPES.filter((scope) => !isScopeSeeded(scope)));
+  if (pending.size > 0) {
+    // A baseline sweep announces nothing; the next one resumes normally.
+    seedScopes(pending);
     return;
   }
 

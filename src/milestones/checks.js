@@ -20,6 +20,35 @@ import {
 } from '../stats/queries.js';
 import { allStreaks } from '../stats/streaks.js';
 
+// Every distinct thing that can be awarded. Thresholds are scoped by kind;
+// records by key, since they all share the kind 'record'. The watcher takes a
+// silent baseline of each scope the first time it sees it, so adding a check
+// here later never dumps its history into the channel -- the list is what
+// makes a NEW scope distinguishable from a new achievement.
+export const AWARD_SCOPES = [
+  'voice_hours',
+  'game_hours',
+  'game_title_hours',
+  'messages',
+  'alone_hours',
+  'duo_hours',
+  'first_game',
+  'reactions_received',
+  'reactions_given',
+  'streak_days',
+  'streak_ended',
+  'record:voice_session',
+  'record:game_session',
+  'record:message_day',
+  'record:reacted_message',
+  'record:streak',
+];
+
+/** Which baseline scope an award belongs to. */
+export function scopeOf(award) {
+  return award.isRecord ? award.key : award.kind;
+}
+
 const VOICE_HOURS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000];
 const GAME_HOURS = [25, 50, 100, 250, 500, 1000, 2500, 5000];
 const GAME_TITLE_HOURS = [50, 100, 250, 500, 1000];

@@ -3,22 +3,28 @@
 // announced twice; record keys are updated in place as they're beaten.
 import { getDb } from '../db/database.js';
 
-const SEED_KEY = '__seeded__';
+const SEED_PREFIX = '__seeded__';
 
 /**
- * Has the baseline been taken? Until it has, everything already achieved
+ * Has this scope been baselined? Until it has, everything already true of it
  * counts as history and is recorded silently rather than announced.
+ *
+ * Baselines are per scope rather than one global flag: a check added in a
+ * later release has a scope nobody has seen before, so its history is written
+ * down quietly instead of arriving as a burst of "achievements" on deploy.
  */
-export function isSeeded() {
-  return !!getDb().prepare('SELECT 1 FROM milestones_awarded WHERE key = ?').get(SEED_KEY);
+export function isScopeSeeded(scope) {
+  return !!getDb()
+    .prepare('SELECT 1 FROM milestones_awarded WHERE key = ?')
+    .get(`${SEED_PREFIX}:${scope}`);
 }
 
-export function markSeeded() {
+export function markScopeSeeded(scope) {
   getDb()
     .prepare(
       `INSERT OR IGNORE INTO milestones_awarded (key, kind, awarded_at) VALUES (?, 'meta', ?)`
     )
-    .run(SEED_KEY, Date.now());
+    .run(`${SEED_PREFIX}:${scope}`, Date.now());
 }
 
 export function hasAward(key) {
