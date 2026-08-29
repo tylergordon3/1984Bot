@@ -438,3 +438,148 @@ export function tagsBetween(aId, bId, window) {
     bToA: count.get({ ...params, from: bId, to: aId }).tags,
   };
 }
+
+// ── Reactions (what was said back without saying anything) ─────────────────
+//
+// Point events on reacted_at, like messages on sent_at. A reaction taken back
+// is deleted rather than marked, so every count here is of live reactions.
+
+function reactionFilter(window, { channelId } = {}) {
+  const clauses = ['reacted_at >= @since', 'reacted_at < @until'];
+  const params = { since: window.since, until: window.until };
+  if (channelId) {
+    clauses.push('channel_id = @channelId');
+    params.channelId = channelId;
+  }
+  return { where: clauses.join(' AND '), params };
+}
+
+/** Total live reactions in the window, and how many people gave them. */
+export function reactionTotals(window) {
+  const { where, params } = reactionFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT COUNT(*) AS reactions,
+              COUNT(DISTINCT user_id) AS reactors,
+              COUNT(DISTINCT message_id) AS messages
+       FROM message_reactions
+       WHERE ${where} AND author_id != user_id`
+    )
+    .get(params);
+}
+
+/** Whose messages drew the most reactions. */
+export function reactionsReceivedLeaderboard(window, limit = 15) {
+  const { where, params } = reactionFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT author_id AS user_id, COUNT(*) AS reactions,
+              COUNT(DISTINCT user_id) AS reactors,
+              COUNT(DISTINCT message_id) AS messages
+       FROM message_reactions
+       WHERE ${where} AND author_id != user_id
+       GROUP BY author_id
+       ORDER BY reactions DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** Who hands out the most reactions. */
+export function reactionsGivenLeaderboard(window, limit = 15) {
+  const { where, params } = reactionFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT user_id, COUNT(*) AS reactions, COUNT(DISTINCT author_id) AS targets
+       FROM message_reactions
+       WHERE ${where} AND author_id != user_id
+       GROUP BY user_id
+       ORDER BY reactions DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** The server's most-used emoji. */
+export function topEmoji(window, limit = 10, userId = null) {
+  const { where, params } = reactionFilter(window);
+  const scope = userId ? `${where} AND user_id = @userId` : where;
+  return getDb()
+    .prepare(
+      `SELECT emoji_name, emoji_id, COUNT(*) AS uses, COUNT(DISTINCT user_id) AS users
+       FROM message_reactions
+       WHERE ${scope}
+       GROUP BY emoji_name, emoji_id
+       ORDER BY uses DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, userId, limit });
+}
+
+/** The most-reacted messages of the window, best first. */
+export function topReactedMessages(window, limit = 5) {
+  const { where, params } = reactionFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT message_id, channel_id, author_id,
+              COUNT(*) AS reactions, COUNT(DISTINCT user_id) AS reactors
+       FROM message_reactions
+       WHERE ${where} AND author_id != user_id
+       GROUP BY message_id
+       ORDER BY reactions DESC, reactors DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, limit });
+}
+
+/** Reaction totals for one person, both directions. */
+export function reactionTotalsForUser(userId, window) {
+  const { where, params } = reactionFilter(window);
+  const db = getDb();
+  const received = db
+    .prepare(
+      `SELECT COUNT(*) AS reactions, COUNT(DISTINCT user_id) AS people,
+              COUNT(DISTINCT message_id) AS messages
+       FROM message_reactions
+       WHERE ${where} AND author_id = @userId AND author_id != user_id`
+    )
+    .get({ ...params, userId });
+  const given = db
+    .prepare(
+      `SELECT COUNT(*) AS reactions, COUNT(DISTINCT author_id) AS people
+       FROM message_reactions
+       WHERE ${where} AND user_id = @userId AND author_id != user_id`
+    )
+    .get({ ...params, userId });
+  return { received, given };
+}
+
+/** Who reacts to this person the most. */
+export function reactionFansOf(userId, window, limit = 5) {
+  const { where, params } = reactionFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT user_id, COUNT(*) AS reactions
+       FROM message_reactions
+       WHERE ${where} AND author_id = @userId AND author_id != user_id
+       GROUP BY user_id
+       ORDER BY reactions DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, userId, limit });
+}
+
+/** Whose messages this person reacts to the most. */
+export function reactionTargetsOf(userId, window, limit = 5) {
+  const { where, params } = reactionFilter(window);
+  return getDb()
+    .prepare(
+      `SELECT author_id AS user_id, COUNT(*) AS reactions
+       FROM message_reactions
+       WHERE ${where} AND user_id = @userId AND author_id != user_id
+       GROUP BY author_id
+       ORDER BY reactions DESC
+       LIMIT @limit`
+    )
+    .all({ ...params, userId, limit });
+}

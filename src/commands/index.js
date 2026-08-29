@@ -6,6 +6,8 @@ import games from './games.js';
 import messages from './messages.js';
 import weather from './weather.js';
 import digest from './digest.js';
+import reactions from './reactions.js';
+import streaks from './streaks.js';
 import smite from './smite.js';
 
 // /smite is registered only while the utility is switched on; deploying
@@ -17,6 +19,8 @@ const all = [
   ...messages,
   ...weather,
   ...digest,
+  ...reactions,
+  ...streaks,
   ...(config.smiteEnabled ? smite : []),
 ];
 

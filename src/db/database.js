@@ -161,6 +161,27 @@ CREATE TABLE IF NOT EXISTS channels (
   updated_at INTEGER NOT NULL
 );
 
+-- One row per (message, reactor, emoji). Reactions are point events like
+-- messages, except they can be taken back, so a removal deletes the row.
+-- author_id is denormalised from the message so "reactions received" is a
+-- plain count rather than a join. emoji_id is '' for unicode emoji: a NULL
+-- there would defeat the primary key, since SQLite allows NULLs in one.
+CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id  TEXT    NOT NULL,
+  guild_id    TEXT    NOT NULL,
+  channel_id  TEXT    NOT NULL,
+  author_id   TEXT    NOT NULL,
+  user_id     TEXT    NOT NULL,
+  emoji_name  TEXT    NOT NULL,
+  emoji_id    TEXT    NOT NULL DEFAULT '',
+  reacted_at  INTEGER NOT NULL,
+  PRIMARY KEY (message_id, user_id, emoji_name, emoji_id)
+);
+CREATE INDEX IF NOT EXISTS idx_react_author ON message_reactions (author_id, reacted_at);
+CREATE INDEX IF NOT EXISTS idx_react_user   ON message_reactions (user_id, reacted_at);
+CREATE INDEX IF NOT EXISTS idx_react_msg    ON message_reactions (message_id);
+CREATE INDEX IF NOT EXISTS idx_react_time   ON message_reactions (reacted_at);
+
 -- Scheduled digests already posted, so a restart can't repeat the day's
 -- report. One row per edition, keyed "daily:2026-08-29" / "weekly:2026-08-30".
 CREATE TABLE IF NOT EXISTS digests_sent (

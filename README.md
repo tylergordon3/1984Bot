@@ -13,6 +13,13 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
 - **Chat surveillance** — who talks the most (filterable by channel and by hour
   of day, e.g. *only after 2pm*), when each person is most active, and a full
   tag graph: who tags whom, who gets tagged most, and who never tags back.
+- **Reaction surveillance** — who gets reacted to, who does the reacting, which
+  emoji this server actually uses, and the best-received messages of any period
+  (with jump links). Reactions taken back are forgotten, as though they never
+  happened.
+- **Attendance streaks** — consecutive days on which someone turned up at all
+  (a message sent, or any time in voice). Current streaks, longest ever, and an
+  announcement when a real one lapses.
 - **It answers when you @ it** — with something it actually knows about you.
 - **The Ministry's report** — a daily digest posted on a schedule (and a weekly
   one), assembled from everything above: the loudest talkers, who logged the
@@ -22,10 +29,12 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   period posts nothing, and a restart never replays an edition.
 - **Milestones** — announcements as they're earned: round numbers crossed
   (100 hours in voice, 1,000 messages on the record, 250 hours in a single
-  game, 100 hours spent *alone*, 100 hours spent with the same person) and
-  server records broken (longest voice session, longest unbroken game session,
-  most messages in a day), plus a *first sighting* the first time anyone plays
-  a game the server has never recorded. `/records` shows the standing records
+  game, 100 hours spent *alone*, 100 hours spent with the same person, 500
+  reactions collected, 30 days' perfect attendance) and server records broken
+  (longest voice session, longest unbroken game session, most messages in a
+  day, best-received message, longest completed streak), plus a *first
+  sighting* the first time anyone plays a game the server has never recorded,
+  and an obituary when a long streak ends. `/records` shows the standing records
   and what was most recently filed. Switching the feature on takes a silent
   baseline of everything already achieved, so history is never dumped into the
   channel — only what happens next is announced.
@@ -69,6 +78,8 @@ Designed to run passively on a Raspberry Pi with a single SQLite file for storag
      without it, since Discord sends the mention list separately). If you'd
      rather not enable it, set `MESSAGE_CONTENT=false` in `.env`; leaving it
      requested but disabled makes Discord reject the login outright.
+   The bot also uses the **Message Reactions** intent for reaction tracking.
+   That one is *not* privileged — there's nothing to enable for it here.
 4. **General Information** tab → copy the **Application ID** (this is `CLIENT_ID`).
 5. Invite the bot: **OAuth2 → URL Generator** → scopes `bot` + `applications.commands`,
    bot permissions: *View Channels, Connect, Speak, Send Messages, Embed Links,
@@ -139,6 +150,17 @@ npm run backfill -- --channel=the-resources
 ```
 
 It's safe to re-run — every message is keyed by id and imported at most once.
+
+Reactions on old messages are not imported by default — that costs an API
+request per emoji per message. Add `--reactions` when you want them:
+
+```bash
+npm run backfill -- --days=90 --reactions
+```
+
+It reconciles rather than appends, so it also clears reactions that were taken
+back while the bot was offline. Imported reactions are dated to their message,
+since Discord doesn't record when a reaction was added.
 
 ---
 
@@ -250,6 +272,13 @@ editions and awarded milestones are all recorded in the database.
 - `/tagstats [user] [period]` — who tags this person the most, who they tag back,
   and where the tagging is most one-sided
 - `/tagleaderboard [period]` — most-tagged people, biggest taggers, closest pairs
+
+**Reactions & attendance:**
+- `/reactionstats [user] [period]` — what they get reacted with, who reacts to
+  them, who they react to, and their best-received message
+- `/reactionleaderboard [period]` — most reacted to, biggest reactors, the
+  server's most-used emoji, and the best-received messages
+- `/streaks [user]` — current attendance streaks and the longest ever
 
 **Reports:**
 - `/digest [period]` — the Ministry's report for a period, the same one posted

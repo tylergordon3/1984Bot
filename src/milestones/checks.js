@@ -14,7 +14,11 @@ import {
   gamePlayerLeaderboard,
   messageLeaderboard,
   voiceCompanions,
+  reactionsReceivedLeaderboard,
+  reactionsGivenLeaderboard,
+  topReactedMessages,
 } from '../stats/queries.js';
+import { allStreaks } from '../stats/streaks.js';
 
 const VOICE_HOURS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000];
 const GAME_HOURS = [25, 50, 100, 250, 500, 1000, 2500, 5000];
@@ -22,6 +26,9 @@ const GAME_TITLE_HOURS = [50, 100, 250, 500, 1000];
 const ALONE_HOURS = [25, 50, 100, 250, 500, 1000];
 const DUO_HOURS = [25, 50, 100, 250, 500, 1000];
 const MESSAGE_COUNTS = [500, 1000, 5000, 10000, 25000, 50000, 100000];
+const REACTIONS_RECEIVED = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+const REACTIONS_GIVEN = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+const STREAK_DAYS = [7, 14, 30, 60, 100, 200, 365, 500, 1000];
 
 // A game has to be played this long before it counts as having been seen here,
 // so a launcher opened for thirty seconds isn't a "first sighting".
@@ -29,6 +36,9 @@ const NEW_GAME_MIN_MS = 10 * MINUTE;
 // Floors below which a record isn't interesting enough to announce.
 const MIN_SESSION_RECORD = HOUR;
 const MIN_MESSAGE_DAY_RECORD = 20;
+const MIN_REACTED_MESSAGE_RECORD = 3;
+// Short streaks end constantly; only a real run is worth an obituary.
+const MIN_ENDED_STREAK = 7;
 // Only the busiest voice users can top alone-time or a duo total.
 const DEEP_VOICE_USERS = 12;
 
@@ -299,6 +309,127 @@ function firstSightings(minMs) {
   }));
 }
 
+/** Reactions collected and reactions handed out. */
+function reactionThresholds() {
+  const window = ALL_TIME();
+  const awards = [];
+
+  for (const row of reactionsReceivedLeaderboard(window, 200)) {
+    const crossed = highestCrossed(REACTIONS_RECEIVED, row.reactions);
+    if (!crossed) continue;
+    awards.push({
+      key: `reactions_received:${row.user_id}:${crossed}`,
+      kind: 'reactions_received',
+      userId: row.user_id,
+      value: crossed,
+      title: '⭐ Approval on file',
+      describe: () =>
+        `**${displayName(row.user_id)}** has now drawn **${crossed.toLocaleString()} reactions** ` +
+        `from ${row.reactors} ${row.reactors === 1 ? 'person' : 'people'} ` +
+        `(${row.reactions.toLocaleString()} total).`,
+    });
+  }
+
+  for (const row of reactionsGivenLeaderboard(window, 200)) {
+    const crossed = highestCrossed(REACTIONS_GIVEN, row.reactions);
+    if (!crossed) continue;
+    awards.push({
+      key: `reactions_given:${row.user_id}:${crossed}`,
+      kind: 'reactions_given',
+      userId: row.user_id,
+      value: crossed,
+      title: '🙌 A generous critic',
+      describe: () =>
+        `**${displayName(row.user_id)}** has handed out **${crossed.toLocaleString()} reactions** ` +
+        `across ${row.targets} ${row.targets === 1 ? 'person' : 'people'}.`,
+    });
+  }
+
+  const [best] = topReactedMessages(window, 1);
+  if (best && best.reactions >= MIN_REACTED_MESSAGE_RECORD) {
+    awards.push({
+      key: 'record:reacted_message',
+      kind: 'record',
+      isRecord: true,
+      userId: best.author_id,
+      detail: `${best.channel_id}/${best.message_id}`,
+      value: best.reactions,
+      title: '🏆 New record: best-received message',
+      describe: (previous) =>
+        `**${displayName(best.author_id)}** drew **${best.reactions} reactions** on one message ` +
+        `from ${best.reactors} ${best.reactors === 1 ? 'person' : 'people'}` +
+        (previous?.value ? ` — past the old high of ${previous.value}.` : '.'),
+    });
+  }
+  return awards;
+}
+
+/**
+ * Attendance streaks: milestones for a run in progress, an obituary when a
+ * real one lapses, and the server record over finished runs only.
+ */
+function streakAwards() {
+  const awards = [];
+  let record = null;
+
+  for (const s of allStreaks()) {
+    if (s.current > 0) {
+      const crossed = highestCrossed(STREAK_DAYS, s.current);
+      if (crossed) {
+        // The start date is in the key, so a later streak of the same length
+        // is a fresh achievement rather than a duplicate of the old one.
+        awards.push({
+          key: `streak_days:${s.user_id}:${s.start}:${crossed}`,
+          kind: 'streak_days',
+          userId: s.user_id,
+          detail: s.start,
+          value: crossed,
+          title: '📆 Perfect attendance',
+          describe: () =>
+            `**${displayName(s.user_id)}** has been present every day for ` +
+            `**${crossed} days** — unbroken since ${s.start}.`,
+        });
+      }
+    }
+
+    if (s.ended && s.ended.length >= MIN_ENDED_STREAK) {
+      awards.push({
+        key: `streak_ended:${s.user_id}:${s.ended.start}`,
+        kind: 'streak_ended',
+        userId: s.user_id,
+        detail: s.ended.end,
+        value: s.ended.length,
+        title: '💀 A streak has ended',
+        describe: () =>
+          `**${displayName(s.user_id)}**'s run of **${s.ended.length} consecutive days** ended ` +
+          `on ${s.ended.end}. The absence has been noted.`,
+      });
+    }
+
+    if (s.longestCompleted > 0 && (!record || s.longestCompleted > record.longestCompleted)) {
+      record = s;
+    }
+  }
+
+  if (record) {
+    const run = record.longestCompletedRun;
+    awards.push({
+      key: 'record:streak',
+      kind: 'record',
+      isRecord: true,
+      userId: record.user_id,
+      detail: `${run.start}..${run.end}`,
+      value: record.longestCompleted,
+      title: '🏆 New record: longest completed streak',
+      describe: (previous) =>
+        `**${displayName(record.user_id)}** put together **${record.longestCompleted} ` +
+        `consecutive days** (${run.start} to ${run.end})` +
+        (previous?.value ? ` — the previous best was ${previous.value}.` : '.'),
+    });
+  }
+  return awards;
+}
+
 /**
  * Every milestone currently true of the data.
  *
@@ -323,6 +454,8 @@ export function currentAwards({ deep = false, seeding = false } = {}) {
     }),
     ...gameTitleThresholds(),
     ...messageThresholds(),
+    ...reactionThresholds(),
+    ...streakAwards(),
     ...firstSightings(seeding ? 0 : NEW_GAME_MIN_MS),
     ...sessionRecords(),
   ];

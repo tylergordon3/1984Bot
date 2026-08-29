@@ -1,6 +1,7 @@
 // The Ministry's report: one embed summarising a window of surveillance,
 // built entirely from statistics already in the database. Used both by the
 // scheduler (daily / weekly editions) and by /digest on demand.
+import { config } from '../config.js';
 import { displayName } from '../db/database.js';
 import { formatDuration } from '../util/time.js';
 import {
@@ -13,7 +14,11 @@ import {
   guildTopGames,
   mostTagged,
   biggestTaggers,
+  topReactedMessages,
+  reactionsGivenLeaderboard,
+  reactionTotals,
 } from '../stats/queries.js';
+import { currentStreaks } from '../stats/streaks.js';
 import { baseEmbed, medal, renderHeatmap, hourLabel } from '../commands/_shared.js';
 
 // How many of the top voice users get the (relatively expensive) interval
@@ -56,11 +61,17 @@ export function buildDigest(window, title = '👁️ Ministry Report') {
 
   const embed = baseEmbed(title, window);
 
+  const reactionCount = reactionTotals(window).reactions;
   const headline = [
     `**${totals.messages.toLocaleString()}** message${totals.messages === 1 ? '' : 's'}`,
+    reactionCount
+      ? `**${reactionCount.toLocaleString()}** reaction${reactionCount === 1 ? '' : 's'}`
+      : null,
     `**${formatDuration(voiceMs)}** of voice time (everyone combined)`,
     `**${totals.people}** under observation`,
-  ].join(' · ');
+  ]
+    .filter(Boolean)
+    .join(' · ');
   embed.setDescription(headline);
 
   const talkers = messageLeaderboard(window, {}, 3);
@@ -111,6 +122,30 @@ export function buildDigest(window, title = '👁️ Ministry Report') {
   const [streamer] = voiceFlagLeaderboard('streaming', window, 1);
   if (streamer) {
     notes.push(`📺 **${displayName(streamer.user_id)}** streamed for ${formatDuration(streamer.ms)}`);
+  }
+  const [starred] = topReactedMessages(window, 1);
+  if (starred) {
+    const link =
+      `https://discord.com/channels/${config.guildId}/` +
+      `${starred.channel_id}/${starred.message_id}`;
+    notes.push(
+      `⭐ **${displayName(starred.author_id)}**'s message drew ${starred.reactions} ` +
+        `reaction${starred.reactions === 1 ? '' : 's'} — [jump](${link})`
+    );
+  }
+  const [reactor] = reactionsGivenLeaderboard(window, 1);
+  if (reactor) {
+    notes.push(
+      `🙌 **${displayName(reactor.user_id)}** handed out ` +
+        `${reactor.reactions} reaction${reactor.reactions === 1 ? '' : 's'}`
+    );
+  }
+  const [streak] = currentStreaks(1);
+  if (streak && streak.current >= 3) {
+    notes.push(
+      `📆 **${displayName(streak.user_id)}** has turned up ` +
+        `${streak.current} days running`
+    );
   }
   const [tagged] = mostTagged(window, 1);
   if (tagged) {

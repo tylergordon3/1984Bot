@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import { config } from './config.js';
 import { logger } from './util/logger.js';
 import { initDatabase, closeDatabase } from './db/database.js';
@@ -16,6 +16,12 @@ import {
   closeAllOpenGameSessions,
 } from './tracking/gameTracker.js';
 import { handleMessageCreate, catchUpMessages } from './tracking/messageTracker.js';
+import {
+  handleReactionAdd,
+  handleReactionRemove,
+  handleReactionRemoveAll,
+  handleReactionRemoveEmoji,
+} from './tracking/reactionTracker.js';
 import { handleBotMention } from './messages/responder.js';
 import { destroyAllPlayers } from './music/player.js';
 import { startWeatherWatcher } from './weather/alerts.js';
@@ -33,10 +39,14 @@ const client = new Client({
     GatewayIntentBits.GuildPresences, // game / activity tracking  (privileged)
     GatewayIntentBits.GuildMembers, // member objects on presence  (privileged)
     GatewayIntentBits.GuildMessages, // message + tag tracking, @-mention replies
+    GatewayIntentBits.GuildMessageReactions, // who reacts to whom (not privileged)
     // Message text, for word counts and keyword replies (privileged). Opt-out
     // via MESSAGE_CONTENT=false so the bot still boots without the portal toggle.
     ...(config.messageContent ? [GatewayIntentBits.MessageContent] : []),
   ],
+  // Reactions on messages sent before the bot started arrive uncached. Without
+  // these, every reaction on older history would be dropped on the floor.
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
 });
 
 const stopHeartbeats = [];
@@ -75,6 +85,32 @@ client.on(Events.MessageCreate, (message) => {
     if (config.mentionReplies) handleBotMention(message, client);
   } catch (err) {
     logger.error('messageCreate error:', err);
+  }
+});
+
+// Reaction handlers are async (partials may need fetching) and own their error
+// handling, so a failed fetch can't reject into the gateway.
+client.on(Events.MessageReactionAdd, (reaction, user) => {
+  handleReactionAdd(reaction, user).catch((err) => logger.error('reactionAdd error:', err));
+});
+
+client.on(Events.MessageReactionRemove, (reaction, user) => {
+  handleReactionRemove(reaction, user).catch((err) => logger.error('reactionRemove error:', err));
+});
+
+client.on(Events.MessageReactionRemoveAll, (message) => {
+  try {
+    handleReactionRemoveAll(message);
+  } catch (err) {
+    logger.error('reactionRemoveAll error:', err);
+  }
+});
+
+client.on(Events.MessageReactionRemoveEmoji, (reaction) => {
+  try {
+    handleReactionRemoveEmoji(reaction);
+  } catch (err) {
+    logger.error('reactionRemoveEmoji error:', err);
   }
 });
 

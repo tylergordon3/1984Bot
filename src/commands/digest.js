@@ -1,16 +1,44 @@
 import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { config } from '../config.js';
 import { displayName } from '../db/database.js';
 import { formatDuration } from '../util/time.js';
 import { buildDigest } from '../digest/report.js';
 import { recentAwards, standingRecords } from '../milestones/store.js';
-import { addPeriodOption, getWindow, baseEmbed } from './_shared.js';
+import { addPeriodOption, getWindow } from './_shared.js';
 
+// Each standing record knows how to render itself: the stored `value` plus
+// whatever its `detail` column happens to mean for that record.
 const RECORD_LABELS = {
-  'record:voice_session': { name: '🎙️ Longest voice session', format: formatDuration },
-  'record:game_session': { name: '🎮 Longest unbroken game session', format: formatDuration },
+  'record:voice_session': {
+    name: '🎙️ Longest voice session',
+    render: (r) => `${formatDuration(r.value)} — **${displayName(r.user_id)}**`,
+  },
+  'record:game_session': {
+    name: '🎮 Longest unbroken game session',
+    render: (r) =>
+      `${formatDuration(r.value)}${r.detail ? ` — *${r.detail}*` : ''} — **${displayName(r.user_id)}**`,
+  },
   'record:message_day': {
     name: '🗣️ Most messages in a day',
-    format: (n) => `${Number(n).toLocaleString()} messages`,
+    render: (r) =>
+      `${Number(r.value).toLocaleString()} messages — **${displayName(r.user_id)}**` +
+      (r.detail ? ` on ${r.detail}` : ''),
+  },
+  'record:reacted_message': {
+    name: '⭐ Best-received message',
+    render: (r) => {
+      const link = r.detail
+        ? ` — [jump](https://discord.com/channels/${config.guildId}/${r.detail})`
+        : '';
+      return `${r.value} reactions — **${displayName(r.user_id)}**${link}`;
+    },
+  },
+  'record:streak': {
+    name: '📆 Longest completed streak',
+    render: (r) => {
+      const when = r.detail ? ` (${r.detail.replace('..', ' to ')})` : '';
+      return `${r.value} days — **${displayName(r.user_id)}**${when}`;
+    },
   },
 };
 
@@ -53,13 +81,7 @@ const records = {
         held
           .map((r) => {
             const label = RECORD_LABELS[r.key];
-            if (!label) return null;
-            const detail = r.key === 'record:game_session' && r.detail ? ` — *${r.detail}*` : '';
-            const on = r.key === 'record:message_day' && r.detail ? ` on ${r.detail}` : '';
-            return (
-              `**${label.name}**\n` +
-              `${label.format(r.value)}${detail} — **${displayName(r.user_id)}**${on}`
-            );
+            return label ? `**${label.name}**\n${label.render(r)}` : null;
           })
           .filter(Boolean)
           .join('\n\n')
@@ -93,6 +115,14 @@ function summarise(a) {
       return `${who} — ${a.value} hours alone in voice`;
     case 'messages':
       return `${who} — ${Number(a.value).toLocaleString()} messages on file`;
+    case 'reactions_received':
+      return `${who} — ${Number(a.value).toLocaleString()} reactions received`;
+    case 'reactions_given':
+      return `${who} — ${Number(a.value).toLocaleString()} reactions given`;
+    case 'streak_days':
+      return `${who} — ${a.value}-day attendance streak`;
+    case 'streak_ended':
+      return `${who} — a ${a.value}-day streak ended`;
     case 'duo_hours': {
       const [x, y] = String(a.detail || '').split('|');
       return `**${displayName(x)}** + **${displayName(y)}** — ${a.value} hours together`;
