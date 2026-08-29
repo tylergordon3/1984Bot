@@ -12,8 +12,9 @@ import { config } from '../config.js';
 import { logger } from '../util/logger.js';
 import { MINUTE } from '../util/time.js';
 import { findTextChannel } from '../util/channels.js';
-import { currentAwards, AWARD_SCOPES, scopeOf } from './checks.js';
-import { isScopeSeeded, markScopeSeeded, hasAward, awardValue, record } from './store.js';
+import { currentAwards, AWARD_SCOPES } from './checks.js';
+import { baselineScopes } from './baseline.js';
+import { isScopeSeeded, hasAward, awardValue, record } from './store.js';
 
 const SWEEP_INTERVAL = 5 * MINUTE;
 // The interval-sweep checks (alone time, pair time) are much heavier than the
@@ -49,47 +50,26 @@ function newAwards(awards) {
   return fresh;
 }
 
-function store(award, { baseline = false } = {}) {
+/** Record an announced award, dated now. History goes through baseline.js. */
+function store(award) {
   record({
     key: award.key,
     kind: award.kind,
     userId: award.userId ?? null,
     detail: award.detail ?? null,
     value: award.value ?? null,
-    // Baseline rows are dated 0: recorded so they're never announced, but not
-    // presented as things that just happened.
-    at: baseline ? 0 : Date.now(),
   });
-}
-
-/**
- * Write down everything already true of scopes we've never baselined,
- * announcing none of it. Runs on first boot for every scope, and again for
- * just the new ones whenever a release adds a check — otherwise the day a
- * check ships, every member's entire history arrives at once as "news".
- *
- * Existing rows are left alone: a scope being re-baselined must never reset
- * the timestamps of milestones that were genuinely announced.
- */
-function seedScopes(pending) {
-  let recorded = 0;
-  for (const award of currentAwards({ deep: true, seeding: true })) {
-    if (!pending.has(scopeOf(award)) || hasAward(award.key)) continue;
-    store(award, { baseline: true });
-    recorded++;
-  }
-  for (const scope of pending) markScopeSeeded(scope);
-  logger.info(
-    `Milestones: baseline taken for ${pending.size} scope(s) ` +
-      `[${[...pending].join(', ')}] — ${recorded} already-earned milestone(s) recorded.`
-  );
 }
 
 async function sweep(client, deep) {
   const pending = new Set(AWARD_SCOPES.filter((scope) => !isScopeSeeded(scope)));
   if (pending.size > 0) {
     // A baseline sweep announces nothing; the next one resumes normally.
-    seedScopes(pending);
+    const recorded = baselineScopes(pending);
+    logger.info(
+      `Milestones: baseline taken for ${pending.size} scope(s) ` +
+        `[${[...pending].join(', ')}] — ${recorded} already-earned milestone(s) recorded.`
+    );
     return;
   }
 

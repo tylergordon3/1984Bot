@@ -162,6 +162,10 @@ It reconciles rather than appends, so it also clears reactions that were taken
 back while the bot was offline. Imported reactions are dated to their message,
 since Discord doesn't record when a reaction was added.
 
+Any backfill finishes by filing the milestones its import made true as
+history, and quietly updating any record the import beat. Imported history was
+always true — it just wasn't on file — so none of it is announced.
+
 ---
 
 ## Running 24/7 on the Pi (systemd)

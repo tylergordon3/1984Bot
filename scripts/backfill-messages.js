@@ -23,6 +23,7 @@ import { config } from '../src/config.js';
 import { initDatabase, closeDatabase } from '../src/db/database.js';
 import { recordMessage, isTrackedChannel } from '../src/tracking/messageTracker.js';
 import { syncMessageReactions } from '../src/tracking/reactionTracker.js';
+import { reconcileImportedHistory } from '../src/milestones/baseline.js';
 import { DAY } from '../src/util/time.js';
 
 const args = process.argv.slice(2);
@@ -105,6 +106,16 @@ client.once(Events.ClientReady, async () => {
     `\n✅ Backfill complete. ${grandTotal} messages imported` +
       (withReactions ? `, ${reactionTotal} reactions.` : '.')
   );
+
+  // Imported history was always true; it just wasn't on file. Bring the
+  // milestone tables level with it here, or the bot's next sweep announces the
+  // archive as though it had all happened this afternoon.
+  const { recorded, updated } = reconcileImportedHistory();
+  if (recorded || updated) {
+    console.log(
+      `   ${recorded} milestone(s) filed as history, ${updated} record(s) updated — none announced.`
+    );
+  }
   finish(0);
 });
 
