@@ -1,6 +1,8 @@
-// Streaks: consecutive local days on which someone turned up at all -- a
-// message sent, or any time in a voice channel. A day is the server's local
-// calendar day, the same basis the hour histograms use.
+// Streaks: consecutive local days on which someone joined a voice channel.
+// Any time at all counts -- a minute is the same as ten hours -- but it has to
+// be voice: chat and game time are tracked elsewhere and don't keep a streak
+// alive. A day is the server's local calendar day, the same basis the hour
+// histograms use.
 //
 // A streak is alive while its last day is today or yesterday: nobody's streak
 // breaks at midnight, it breaks when a whole day passes without them. That
@@ -50,21 +52,6 @@ function addVoiceDays(byUser) {
       days.add(dayKey(cursor.getTime()));
       cursor.setDate(cursor.getDate() + 1);
     }
-    byUser.set(row.user_id, days);
-  }
-}
-
-function addMessageDays(byUser) {
-  const rows = getDb()
-    .prepare(
-      `SELECT DISTINCT user_id,
-              strftime('%Y-%m-%d', sent_at / 1000, 'unixepoch', 'localtime') AS day
-       FROM messages`
-    )
-    .all();
-  for (const row of rows) {
-    const days = byUser.get(row.user_id) || new Set();
-    days.add(row.day);
     byUser.set(row.user_id, days);
   }
 }
@@ -130,10 +117,9 @@ export function streakState(days) {
   };
 }
 
-/** Streak state for everyone with any recorded activity, keyed by user id. */
+/** Streak state for everyone who has ever been in voice, keyed by user id. */
 export function allStreaks() {
   const byUser = new Map();
-  addMessageDays(byUser);
   addVoiceDays(byUser);
 
   const out = [];

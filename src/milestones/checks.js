@@ -25,6 +25,12 @@ import { allStreaks } from '../stats/streaks.js';
 // silent baseline of each scope the first time it sees it, so adding a check
 // here later never dumps its history into the channel -- the list is what
 // makes a NEW scope distinguishable from a new achievement.
+//
+// Changing what an existing scope *measures* is the other case to be careful
+// with: its old rows describe the old definition, and the recomputed values
+// look like fresh achievements. Delete that scope's rows and its
+// '__seeded__:<scope>' marker as part of the release, with the bot stopped,
+// and the next boot re-baselines it silently.
 export const AWARD_SCOPES = [
   'voice_hours',
   'game_hours',
@@ -415,7 +421,7 @@ function streakAwards() {
           value: crossed,
           title: '📆 Perfect attendance',
           describe: () =>
-            `**${displayName(s.user_id)}** has been present every day for ` +
+            `**${displayName(s.user_id)}** has been in a voice channel every day for ` +
             `**${crossed} days** — unbroken since ${s.start}.`,
         });
       }
@@ -430,8 +436,8 @@ function streakAwards() {
         value: s.ended.length,
         title: '💀 A streak has ended',
         describe: () =>
-          `**${displayName(s.user_id)}**'s run of **${s.ended.length} consecutive days** ended ` +
-          `on ${s.ended.end}. The absence has been noted.`,
+          `**${displayName(s.user_id)}**'s run of **${s.ended.length} consecutive days** in voice ` +
+          `ended on ${s.ended.end}. The absence has been noted.`,
       });
     }
 

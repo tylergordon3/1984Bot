@@ -143,7 +143,7 @@ export function buildDigest(window, title = '👁️ Ministry Report') {
   const [streak] = currentStreaks(1);
   if (streak && streak.current >= 3) {
     notes.push(
-      `📆 **${displayName(streak.user_id)}** has turned up ` +
+      `📆 **${displayName(streak.user_id)}** has been in voice ` +
         `${streak.current} days running`
     );
   }

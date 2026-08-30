@@ -17,9 +17,12 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   emoji this server actually uses, and the best-received messages of any period
   (with jump links). Reactions taken back are forgotten, as though they never
   happened.
-- **Attendance streaks** — consecutive days on which someone turned up at all
-  (a message sent, or any time in voice). Current streaks, longest ever, and an
-  announcement when a real one lapses.
+- **Attendance streaks** — consecutive days on which someone joined a voice
+  channel. Any time at all counts, but it has to be voice: chat and game time
+  don't keep a streak alive. A streak survives while its last day is today or
+  yesterday, so it breaks only when a whole day passes with nobody hearing from
+  you. Current streaks, longest ever, and an announcement when a real one
+  lapses.
 - **It answers when you @ it** — with something it actually knows about you.
 - **The Ministry's report** — a daily digest posted on a schedule (and a weekly
   one), assembled from everything above: the loudest talkers, who logged the
@@ -30,7 +33,7 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
 - **Milestones** — announcements as they're earned: round numbers crossed
   (100 hours in voice, 1,000 messages on the record, 250 hours in a single
   game, 100 hours spent *alone*, 100 hours spent with the same person, 500
-  reactions collected, 30 days' perfect attendance) and server records broken
+  reactions collected, 30 days running in voice) and server records broken
   (longest voice session, longest unbroken game session, most messages in a
   day, best-received message, longest completed streak), plus a *first
   sighting* the first time anyone plays a game the server has never recorded,
@@ -282,7 +285,7 @@ editions and awarded milestones are all recorded in the database.
   them, who they react to, and their best-received message
 - `/reactionleaderboard [period]` — most reacted to, biggest reactors, the
   server's most-used emoji, and the best-received messages
-- `/streaks [user]` — current attendance streaks and the longest ever
+- `/streaks [user]` — current voice-attendance streaks and the longest ever
 
 **Reports:**
 - `/digest [period]` — the Ministry's report for a period, the same one posted

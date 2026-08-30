@@ -8,13 +8,13 @@ const days = (n) => `${n} day${n === 1 ? '' : 's'}`;
 const streaks = {
   data: new SlashCommandBuilder()
     .setName('streaks')
-    .setDescription('Who has turned up every day, and for how long')
+    .setDescription('Who has been in voice every day, and for how long')
     .addUserOption((o) => o.setName('user').setDescription('Show one person in detail')),
   async execute(interaction) {
     const target = interaction.options.getUser('user');
     const embed = new EmbedBuilder()
       .setColor(0xcc0000)
-      .setFooter({ text: '1984Bot · a day counts as a message sent or any time in voice' })
+      .setFooter({ text: '1984Bot · a day counts if you were in a voice channel at all' })
       .setTimestamp();
 
     if (target) {
@@ -22,7 +22,7 @@ const streaks = {
       const s = streakForUser(target.id);
       embed.setTitle(`📆 Attendance — ${target.username}`);
       if (!s.lastDay) {
-        embed.setDescription('_Never observed. Not once._');
+        embed.setDescription('_Never once heard in a voice channel._');
       } else {
         const lines = [
           s.current > 0
