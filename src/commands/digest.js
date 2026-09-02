@@ -50,7 +50,7 @@ const digest = {
   ),
   async execute(interaction) {
     const window = getWindow(interaction);
-    const embed = buildDigest(window, '👁️ Ministry Report');
+    const embed = buildDigest(window, '👁️ Ministry Report', { guild: interaction.guild });
     if (!embed) {
       await interaction.reply({
         content: 'Nothing to report for that period. Suspiciously quiet.',

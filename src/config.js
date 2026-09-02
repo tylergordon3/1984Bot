@@ -108,6 +108,9 @@ export const config = {
   digestWeekly: process.env.DIGEST_WEEKLY !== 'false',
   // Weekday the weekly edition goes out on: 0 = Sunday … 6 = Saturday.
   digestWeeklyDay: intInRange('DIGEST_WEEKLY_DAY', 0, 0, 6),
+  // Missing persons: members unseen for this many days are named in the
+  // report. 0 drops the section.
+  digestMissingDays: intInRange('DIGEST_MISSING_DAYS', 7, 0, 3650),
   // Milestone announcements: thresholds crossed and records broken, posted as
   // they happen. Everything already achieved is recorded silently on first
   // run, so switching this on never dumps years of history into the channel.

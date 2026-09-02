@@ -3,7 +3,7 @@
 // scheduler (daily / weekly editions) and by /digest on demand.
 import { config } from '../config.js';
 import { displayName } from '../db/database.js';
-import { formatDuration } from '../util/time.js';
+import { DAY, formatDuration, previousWindow } from '../util/time.js';
 import {
   messageTotals,
   messageLeaderboard,
@@ -17,6 +17,7 @@ import {
   topReactedMessages,
   reactionsGivenLeaderboard,
   reactionTotals,
+  lastSeenByUser,
 } from '../stats/queries.js';
 import { currentStreaks } from '../stats/streaks.js';
 import { baseEmbed, medal, renderHeatmap, hourLabel } from '../commands/_shared.js';
@@ -47,11 +48,99 @@ function userLines(rows, render) {
   return rows.map((r, i) => `${medal(i)} ${render(r)}`).join('\n');
 }
 
+// ── Trends ───────────────────────────────────────────────────────────────
+
+// Below this the change is noise, not news.
+const FLAT_PERCENT = 5;
+
+/** "▲ 40%", "▼ 12%", "▬ flat", or "▲ from 0" against a previous value. */
+function trend(current, previous) {
+  if (!current && !previous) return null;
+  if (!previous) return '▲ from 0';
+  if (!current) return '▼ 100%';
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (Math.abs(pct) < FLAT_PERCENT) return '▬ flat';
+  return pct > 0 ? `▲ ${pct}%` : `▼ ${Math.abs(pct)}%`;
+}
+
+/**
+ * Append a trend in parentheses. `previous` undefined means there is nothing
+ * to compare against (all-time, or before the record began), which is
+ * different from a previous value of zero.
+ */
+function withTrend(text, current, previous) {
+  const t = previous === undefined ? null : trend(current, previous);
+  return t ? `${text} (${t})` : text;
+}
+
+/**
+ * The same headline figures for the window before this one, so the report
+ * can say "up 40%" rather than just "412". Null when there's nothing to
+ * compare against: all-time has no predecessor, and a previous window with
+ * no activity at all means the bot wasn't recording yet, not that the server
+ * was silent.
+ */
+function previousFigures(window) {
+  const prev = previousWindow(window);
+  if (!prev) return null;
+  const totals = messageTotals(null, prev);
+  const voice = voiceLeaderboard(prev, 500);
+  const voiceMs = sumMs(voice);
+  const reactions = reactionTotals(prev).reactions;
+  if (!totals.messages && voiceMs === 0 && !reactions) return null;
+  const perUser = (rows, key) => new Map(rows.map((r) => [r.user_id, r[key]]));
+  return {
+    label: prev.label,
+    totals,
+    voiceMs,
+    reactions,
+    messagesByUser: perUser(messageLeaderboard(prev, {}, 500), 'messages'),
+    voiceByUser: perUser(voice, 'ms'),
+  };
+}
+
+// ── Missing persons ──────────────────────────────────────────────────────
+
+const MISSING_SHOWN = 5;
+
+/**
+ * Current members with something on file who haven't been observed for the
+ * configured number of days, longest-absent first. Returns [] when the
+ * section is off, no guild was supplied, or the whole record has gone quiet
+ * past the threshold — that's the bot having been down, not the members.
+ */
+function missingPersons(guild, days) {
+  if (!guild || days <= 0) return [];
+  const cutoff = Date.now() - days * DAY;
+  const seen = lastSeenByUser();
+  const newest = Math.max(0, ...seen.map((r) => r.last_seen));
+  if (newest < cutoff) return [];
+  return seen
+    .filter((r) => r.last_seen < cutoff)
+    .filter((r) => {
+      const member = guild.members.cache.get(r.user_id);
+      return member && !member.user.bot;
+    })
+    .sort((a, b) => a.last_seen - b.last_seen);
+}
+
+function missingLines(rows) {
+  const shown = rows.slice(0, MISSING_SHOWN).map(
+    (r) => `**${displayName(r.user_id)}** — last seen ${r.source} <t:${Math.floor(r.last_seen / 1000)}:R>`
+  );
+  const rest = rows.length - shown.length;
+  if (rest > 0) shown.push(`_…and ${rest} more unaccounted for._`);
+  return shown.join('\n');
+}
+
 /**
  * Build the report embed for a window. Returns null when the period was
  * genuinely dead — an empty report is worse than no report.
+ *
+ * Pass the guild to get the missing-persons section: absence only means
+ * something for people who are still members.
  */
-export function buildDigest(window, title = '👁️ Ministry Report') {
+export function buildDigest(window, title = '👁️ Ministry Report', { guild = null } = {}) {
   const totals = messageTotals(null, window);
   const voice = voiceLeaderboard(window, 100);
   const games = guildTopGames(window, 3);
@@ -60,30 +149,47 @@ export function buildDigest(window, title = '👁️ Ministry Report') {
   if (!totals.messages && voiceMs === 0 && games.length === 0) return null;
 
   const embed = baseEmbed(title, window);
+  const prev = previousFigures(window);
+  // A person absent from a previous leaderboard genuinely scored zero then.
+  const vs = (text, current, previous) => withTrend(text, current, prev ? previous ?? 0 : undefined);
 
   const reactionCount = reactionTotals(window).reactions;
   const headline = [
-    `**${totals.messages.toLocaleString()}** message${totals.messages === 1 ? '' : 's'}`,
+    vs(
+      `**${totals.messages.toLocaleString()}** message${totals.messages === 1 ? '' : 's'}`,
+      totals.messages,
+      prev?.totals.messages
+    ),
     reactionCount
-      ? `**${reactionCount.toLocaleString()}** reaction${reactionCount === 1 ? '' : 's'}`
+      ? vs(
+          `**${reactionCount.toLocaleString()}** reaction${reactionCount === 1 ? '' : 's'}`,
+          reactionCount,
+          prev?.reactions
+        )
       : null,
-    `**${formatDuration(voiceMs)}** of voice time (everyone combined)`,
-    `**${totals.people}** under observation`,
+    vs(`**${formatDuration(voiceMs)}** of voice time (everyone combined)`, voiceMs, prev?.voiceMs),
+    vs(`**${totals.people}** under observation`, totals.people, prev?.totals.people),
   ]
     .filter(Boolean)
     .join(' · ');
-  embed.setDescription(headline);
+  embed.setDescription(prev ? `${headline}\n_Trends are against the ${prev.label}._` : headline);
 
   const talkers = messageLeaderboard(window, {}, 3);
-  const talkerLines = userLines(
-    talkers,
-    (r) => `**${displayName(r.user_id)}** — ${r.messages.toLocaleString()} msg`
+  const talkerLines = userLines(talkers, (r) =>
+    vs(
+      `**${displayName(r.user_id)}** — ${r.messages.toLocaleString()} msg`,
+      r.messages,
+      prev?.messagesByUser.get(r.user_id)
+    )
   );
   if (talkerLines) embed.addFields({ name: '🗣️ Loudest', value: talkerLines, inline: true });
 
-  const voiceLines = userLines(
-    voice.slice(0, 3),
-    (r) => `**${displayName(r.user_id)}** — ${formatDuration(r.ms)}`
+  const voiceLines = userLines(voice.slice(0, 3), (r) =>
+    vs(
+      `**${displayName(r.user_id)}** — ${formatDuration(r.ms)}`,
+      r.ms,
+      prev?.voiceByUser.get(r.user_id)
+    )
   );
   if (voiceLines) embed.addFields({ name: '🎙️ Most time in voice', value: voiceLines, inline: true });
 
@@ -160,6 +266,15 @@ export function buildDigest(window, title = '👁️ Ministry Report') {
   }
   if (notes.length > 0) {
     embed.addFields({ name: '📁 Of note', value: notes.join('\n'), inline: false });
+  }
+
+  const missing = missingPersons(guild, config.digestMissingDays);
+  if (missing.length > 0) {
+    embed.addFields({
+      name: `🕵️ Missing persons — unseen for ${config.digestMissingDays}+ days`,
+      value: missingLines(missing),
+      inline: false,
+    });
   }
 
   if (totals.messages > 0) {

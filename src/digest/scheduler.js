@@ -65,7 +65,7 @@ async function post(client, edition) {
   }
 
   const { period, title } = EDITIONS[edition.kind];
-  const embed = buildDigest(resolvePeriod(period), title);
+  const embed = buildDigest(resolvePeriod(period), title, { guild });
 
   // Mark before sending, as with weather alerts: a Discord hiccup must not
   // turn into a report posted once a minute for the rest of the day.

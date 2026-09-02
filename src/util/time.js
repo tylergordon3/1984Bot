@@ -48,6 +48,23 @@ export function resolvePeriod(period = 'week') {
   }
 }
 
+/**
+ * The window of the same length immediately before this one, for "versus the
+ * previous period" comparisons. All-time has no predecessor, so returns null.
+ */
+export function previousWindow(window) {
+  if (!window || window.since <= 0) return null;
+  const length = window.until - window.since;
+  if (length <= 0) return null;
+  const since = window.since - length;
+  return {
+    since,
+    until: window.since,
+    label: `previous ${window.label.replace(/^past /, '')}`,
+    range: formatDateRange(since, window.since),
+  };
+}
+
 /** Human-friendly duration from milliseconds, e.g. "3h 12m". */
 export function formatDuration(ms) {
   if (!ms || ms < 0) ms = 0;

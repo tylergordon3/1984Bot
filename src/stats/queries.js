@@ -583,3 +583,34 @@ export function reactionTargetsOf(userId, window, limit = 5) {
     )
     .all({ ...params, userId, limit });
 }
+
+// ── Presence on the record ───────────────────────────────────────────────
+
+/**
+ * When each person was last observed doing anything at all — in voice, in
+ * chat, at play, or reacting — and which of those it was. Open sessions
+ * count as "now". Only people with something on file appear; someone the bot
+ * has never seen has no last-seen to report.
+ */
+export function lastSeenByUser() {
+  const now = Date.now();
+  // SQLite's bare-column rule: with a lone MAX(), the other columns come from
+  // the row that supplied the maximum, so `source` is the source of the
+  // latest sighting.
+  return getDb()
+    .prepare(
+      `SELECT user_id, MAX(at) AS last_seen, source FROM (
+         SELECT user_id, MAX(COALESCE(left_at, @now)) AS at, 'in voice' AS source
+           FROM voice_sessions GROUP BY user_id
+         UNION ALL
+         SELECT user_id, MAX(sent_at), 'in chat' FROM messages GROUP BY user_id
+         UNION ALL
+         SELECT user_id, MAX(COALESCE(ended_at, @now)), 'at play'
+           FROM game_sessions GROUP BY user_id
+         UNION ALL
+         SELECT user_id, MAX(reacted_at), 'reacting' FROM message_reactions GROUP BY user_id
+       )
+       GROUP BY user_id`
+    )
+    .all({ now });
+}
