@@ -103,6 +103,8 @@ export const config = {
   // a restart never replays an edition, and quiet periods post nothing.
   digestEnabled: process.env.DIGEST_ENABLED !== 'false',
   digestChannel: channelName('DIGEST_CHANNEL', 'gord-bot'),
+  // The weekly edition can go somewhere more public than the daily one.
+  digestWeeklyChannel: channelName('DIGEST_WEEKLY_CHANNEL', process.env.DIGEST_CHANNEL || 'gord-bot'),
   digestHour: intInRange('DIGEST_HOUR', 9, 0, 23),
   digestDaily: process.env.DIGEST_DAILY !== 'false',
   digestWeekly: process.env.DIGEST_WEEKLY !== 'false',

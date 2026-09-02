@@ -9,4 +9,6 @@ process.env.DATABASE_PATH = ':memory:';
 process.env.MESSAGE_CHANNELS = '';
 process.env.LOG_LEVEL = 'error';
 process.env.DIGEST_MISSING_DAYS = '7';
+process.env.DIGEST_CHANNEL = 'bot-room';
+process.env.DIGEST_WEEKLY_CHANNEL = 'town-square';
 process.env.WEATHER_LOCATIONS = '';

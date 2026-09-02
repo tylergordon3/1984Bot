@@ -33,7 +33,9 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   down 12%, a new face on the board), and a **missing persons** section names
   the members who haven't been seen anywhere for `DIGEST_MISSING_DAYS`
   (default 7), longest-absent first. `/digest` renders one for any period on
-  demand. A dead period posts nothing, and a restart never replays an edition.
+  demand. The weekly edition can go to a different channel than the daily
+  (`DIGEST_WEEKLY_CHANNEL`). A dead period posts nothing, and a restart never
+  replays an edition.
 - **Milestones** — announcements as they're earned: round numbers crossed
   (100 hours in voice, 1,000 messages on the record, 250 hours in a single
   game, 100 hours spent *alone*, 100 hours spent with the same person, 500

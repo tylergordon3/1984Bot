@@ -12,9 +12,14 @@ import { buildDigest } from './report.js';
 const TICK_INTERVAL = MINUTE;
 
 const EDITIONS = {
-  daily: { period: 'day', title: '👁️ Daily Report' },
-  weekly: { period: 'week', title: '👁️ Weekly Report' },
+  daily: { period: 'day', title: '👁️ Daily Report', channel: () => config.digestChannel },
+  weekly: { period: 'week', title: '👁️ Weekly Report', channel: () => config.digestWeeklyChannel },
 };
+
+/** Which channel (name or id) an edition is posted to. */
+export function editionChannel(kind) {
+  return EDITIONS[kind].channel();
+}
 
 /** Local calendar date, e.g. "2026-08-29" — the identity of an edition. */
 function dateKey(d) {
@@ -58,9 +63,10 @@ function dueEditions(now = new Date()) {
 async function post(client, edition) {
   const guild = client.guilds.cache.get(config.guildId);
   if (!guild) return;
-  const channel = findTextChannel(guild, config.digestChannel);
+  const channelName = editionChannel(edition.kind);
+  const channel = findTextChannel(guild, channelName);
   if (!channel) {
-    logger.warn(`Digest: channel "${config.digestChannel}" not found in guild.`);
+    logger.warn(`Digest: channel "${channelName}" not found in guild.`);
     return;
   }
 
@@ -98,11 +104,11 @@ export function startDigestScheduler(client) {
   }
 
   const editions = [
-    config.digestDaily ? 'daily' : null,
-    config.digestWeekly ? `weekly (day ${config.digestWeeklyDay})` : null,
+    config.digestDaily ? `daily → #${config.digestChannel}` : null,
+    config.digestWeekly ? `weekly (day ${config.digestWeeklyDay}) → #${config.digestWeeklyChannel}` : null,
   ].filter(Boolean);
   logger.info(
-    `Digest → #${config.digestChannel} at ${String(config.digestHour).padStart(2, '0')}:00 | ` +
+    `Digest at ${String(config.digestHour).padStart(2, '0')}:00 | ` +
       `editions: ${editions.join(', ') || 'none enabled'}`
   );
 
