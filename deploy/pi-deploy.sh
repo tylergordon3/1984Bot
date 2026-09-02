@@ -68,6 +68,15 @@ main() {
   fi
 
   ########################################
+  # TESTS
+  ########################################
+  # The suite runs against an in-memory database and a fake identity, so it
+  # touches nothing live. A failure stops here: the running bot stays up on
+  # the old code rather than being restarted onto a broken build.
+  log "running tests"
+  npm test
+
+  ########################################
   # SLASH COMMANDS
   ########################################
   # Registering hits the Discord API, so only do it when the commands changed.

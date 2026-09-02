@@ -28,8 +28,12 @@ Spotify-links-resolved-to-YouTube) and quietly keeps a dossier on everyone:
   one), assembled from everything above: the loudest talkers, who logged the
   most voice time, the top games, who was inseparable from whom, who spent the
   longest alone in a channel, who got tagged most, and a heatmap of when the
-  day was busiest. `/digest` renders one for any period on demand. A dead
-  period posts nothing, and a restart never replays an edition.
+  day was busiest. Every headline figure and every name on the leaderboards
+  carries a **trend** against the period before (messages up 40%, voice time
+  down 12%, a new face on the board), and a **missing persons** section names
+  the members who haven't been seen anywhere for `DIGEST_MISSING_DAYS`
+  (default 7), longest-absent first. `/digest` renders one for any period on
+  demand. A dead period posts nothing, and a restart never replays an edition.
 - **Milestones** — announcements as they're earned: round numbers crossed
   (100 hours in voice, 1,000 messages on the record, 250 hours in a single
   game, 100 hours spent *alone*, 100 hours spent with the same person, 500
@@ -140,6 +144,20 @@ npm start
 
 You should see `1984Bot is watching. 👁️`. Try `/voiceleaderboard`, `/play`, etc.
 
+## Tests
+
+```bash
+npm test
+```
+
+Uses Node's built-in test runner, so there is nothing extra to install. The
+suite runs against an in-memory SQLite database with a fake bot identity, so
+it never touches `.env`, the real database, or Discord. It covers the window
+clamping and overlap arithmetic behind the leaderboards, streak rules, tag
+de-duplication, milestone thresholds and records, and the digest's trends and
+missing-persons sections. `deploy/pi-deploy.sh` runs it before restarting the
+service, so a failing test leaves the old build running.
+
 ## 6. (Optional) Import existing chat history
 
 Message tracking starts empty. To make the chat stats useful on day one, import
@@ -214,10 +232,11 @@ anyone logging in), arms the timers, and runs the first deploy.
 ssh <pi> 'cd ~/apps/1984Bot && ./deploy/pi-deploy.sh'
 ```
 
-The script is idempotent: it skips `npm ci` unless the lockfile moved, skips
-slash-command registration unless `src/commands` changed, restarts the unit and
-then health-checks it, failing loudly with the last 40 log lines if the bot
-didn't survive startup.
+The script is idempotent: it skips `npm ci` unless the lockfile moved, runs
+the test suite, skips slash-command registration unless `src/commands`
+changed, restarts the unit and then health-checks it, failing loudly with the
+last 40 log lines if the bot didn't survive startup. A test failure aborts
+before the restart.
 
 ### Operating
 

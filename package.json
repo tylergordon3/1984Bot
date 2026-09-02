@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "deploy": "node scripts/deploy-commands.js",
     "backfill": "node scripts/backfill-messages.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --import ./test/setup.js --test 'test/**/*.test.js'"
   },
   "engines": {
     "node": ">=18.17.0"
