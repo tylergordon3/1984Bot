@@ -93,8 +93,19 @@ main() {
   ########################################
   # RESTART
   ########################################
+  # A system unit running as its own user, bot1984, once gord-stats'
+  # deploy/bot1984/install.sh has run; tgord may restart it without a password
+  # (its sudo rule names this exact command). A user unit before that.
+  local CTL=(systemctl --user) LOGS=(journalctl --user-unit="$UNIT")
+  if [ -e "/etc/systemd/system/$UNIT.service" ]; then
+    CTL=(systemctl) LOGS=(journalctl -u "$UNIT")
+  fi
   log "restarting $UNIT"
-  systemctl --user restart "$UNIT"
+  if [ "${#CTL[@]}" -eq 1 ]; then
+    sudo -n systemctl restart "$UNIT.service"
+  else
+    "${CTL[@]}" restart "$UNIT"
+  fi
 
   ########################################
   # HEALTH CHECK
@@ -103,12 +114,12 @@ main() {
   # rather than reporting success on a process that's about to die.
   sleep 8
 
-  if systemctl --user is-active --quiet "$UNIT"; then
+  if "${CTL[@]}" is-active --quiet "$UNIT"; then
     log "✅ $UNIT is running ($(git rev-parse --short HEAD))"
-    journalctl --user-unit="$UNIT" --no-pager --lines=8 --since "1 min ago"
+    "${LOGS[@]}" --no-pager --lines=8 --since "1 min ago"
   else
     log "❌ $UNIT failed to start"
-    journalctl --user-unit="$UNIT" --no-pager --lines=40
+    "${LOGS[@]}" --no-pager --lines=40
     exit 1
   fi
 }
